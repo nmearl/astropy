@@ -21,6 +21,7 @@ from .sky_coordinate import *
 from .funcs import *
 from .calculation import *
 from .solar_system import *
+from .spectral_coordinate import *
 
 # This is for backwards-compatibility -- can be removed in v3.0 when the
 # deprecation warnings are removed
