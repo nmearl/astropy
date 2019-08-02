@@ -1,8 +1,8 @@
 import astropy.units as u
 import numpy as np
-from astropy.coordinates.baseframe import BaseCoordinateFrame
-import logging
 from astropy.constants import c
+from astropy.coordinates import CartesianDifferential
+from astropy.coordinates.baseframe import BaseCoordinateFrame
 from astropy.utils.compat import NUMPY_LT_1_14
 
 DOPPLER_CONVENTIONS = {
@@ -24,11 +24,11 @@ class SpectralCoord(u.Quantity):
         Spectral axis data values.
     unit : str or `Unit`
         Unit for the given data.
-    rest : `Quantity`
+    rest : `Quantity`, optional
         The rest value to use for velocity space transformations.
-    observer : `BaseCoordinateFrame`
+    observer : `BaseCoordinateFrame`, optional
         The coordinate frame of the observer.
-    target : `BaseCoordinateFrame`
+    target : `BaseCoordinateFrame`, optional
         The coordinate frame of the target.
     """
     def __new__(cls, value, unit=None, rest_value=None,
@@ -61,6 +61,29 @@ class SpectralCoord(u.Quantity):
         """
         return SpectralCoord, True
 
+    @staticmethod
+    def _validate_frame(value):
+        """
+        Checks the type of the frame and whether a velocity differential has
+        been defined on the frame object.
+
+        Parameters
+        ----------
+        value : `BaseCoordinateFrame`
+            The new frame to be used for target or observer.
+        """
+        if value is not None:
+            if not isinstance(value, BaseCoordinateFrame):
+                raise ValueError("`{}` is not a subclass of "
+                                 "`BaseCoordinateFrame`".format(value))
+
+            # If the observer frame does not contain information about the
+            # velocity of the system, assume that the velocity is zero in the
+            # system.
+            if 's' not in value.data.differentials:
+                value.data.differentials = CartesianDifferential(
+                    0, 0, 0, unit=u.km/u.s)
+
     @property
     def observer(self):
         """
@@ -75,10 +98,7 @@ class SpectralCoord(u.Quantity):
 
     @observer.setter
     def observer(self, value):
-        if value is not None and not isinstance(value, BaseCoordinateFrame):
-            raise ValueError("`{}` is not a subclass of `BaseCoordinateFrame`"
-                             "".format(value))
-
+        self._validate_frame(value)
         self._observer = value
 
     @property
@@ -95,10 +115,7 @@ class SpectralCoord(u.Quantity):
 
     @target.setter
     def target(self, value):
-        if value is not None and not isinstance(value, BaseCoordinateFrame):
-            raise ValueError("`{}` is not a subclass of `BaseCoordinateFrame`"
-                             "".format(value))
-
+        self._validate_frame(value)
         self._target = value
 
     @property
@@ -161,13 +178,13 @@ class SpectralCoord(u.Quantity):
         if target is not None:
             self.target = target
 
-        # If not velocities are defined on the target or observer frames,
-        # assume they have zero velocity in their frame.
-
+        # If no velocities are defined in the new observer frame,
+        # assume it has zero velocity in their frame.
+        self._validate_frame(frame)
 
         # Get the velocity differentials for each frame
-        init_obs_vel = self.target.transform_to(self.observer).velocity
-        fin_obs_vel = self.target.transform_to(frame).velocity
+        init_obs_vel = self.target.transform_to(self.observer).velocity.get_d_xyz()
+        fin_obs_vel = self.target.transform_to(frame).velocity.get_d_xyz()
 
         # Store the new frame as the current observer frame
         self.observer = frame
