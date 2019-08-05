@@ -50,13 +50,15 @@ class SpectralCoord(u.Quantity):
     def __array_finalize__(self, obj):
         super().__array_finalize__(obj)
 
-        if obj is not None:
-            unit = getattr(obj, 'unit', u.AA)
-            self.rest_value = getattr(obj, '_rest_value', 0 * unit)
-            self.velocity_convention = getattr(obj, '_velocity_convention',
-                                               'relativistic')
-            self.observer = getattr(obj, '_observer', None)
-            self.target = getattr(obj, '_target', None)
+        # If we're a new object or viewing an ndarray, nothing has to be done.
+        if obj is None or obj.__class__ is np.ndarray:
+            return
+
+        self.rest = getattr(obj, '_rest_value', None)
+        self.velocity_convention = getattr(obj, '_velocity_convention',
+                                           'relativistic')
+        self.observer = getattr(obj, '_observer', None)
+        self.target = getattr(obj, '_target', None)
 
     def __quantity_subclass__(self, unit):
         """
