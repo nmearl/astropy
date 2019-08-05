@@ -16,7 +16,7 @@ __all__ = ['SpectralCoord']
 
 class SpectralCoord(u.Quantity):
     """
-    Coordinate object representing a spectral axis.
+    Coordinate object representing spectral values.
 
     Attributes
     ----------
@@ -26,18 +26,22 @@ class SpectralCoord(u.Quantity):
         Unit for the given data.
     rest : `Quantity`, optional
         The rest value to use for velocity space transformations.
-    observer : `BaseCoordinateFrame`, optional
-        The coordinate frame of the observer.
-    target : `BaseCoordinateFrame`, optional
-        The coordinate frame of the target.
+    velocity_convention : str
+        The convention to use when converting the spectral data to/from
+        velocity space.
+    observer : `BaseCoordinateFrame` or `SkyCoord`, optional
+        The coordinate (position and velocity) of observer.
+    target : `BaseCoordinateFrame` or `SkyCoord`, optional
+        The coordinate (position and velocity) of observer.
     """
-    def __new__(cls, value, unit=None, rest_value=None,
+    def __new__(cls, value, unit=None, rest=None,
                 velocity_convention=None, observer=None, target=None,
                 **kwargs):
         obj = super().__new__(cls, value, unit=unit, **kwargs)
 
-        obj.rest_value = rest_value or 0 * unit
+        obj.rest = rest
         obj.velocity_convention = velocity_convention or 'relativistic'
+
         obj.observer = observer
         obj.target = target
 
@@ -91,7 +95,7 @@ class SpectralCoord(u.Quantity):
 
         Returns
         -------
-        : `BaseCoordinateFrame`
+        `BaseCoordinateFrame`
             The astropy coordinate frame representing the observation.
         """
         return self._observer
@@ -108,7 +112,7 @@ class SpectralCoord(u.Quantity):
 
         Returns
         -------
-        : `BaseCoordinateFrame`
+        `BaseCoordinateFrame`
             The astropy coordinate frame representing the target.
         """
         return self._target
@@ -126,7 +130,7 @@ class SpectralCoord(u.Quantity):
 
         Returns
         -------
-        : `Quantity`
+        `Quantity`
             Rest value as an astropy `Quantity` object.
         """
         return self._rest_value
@@ -143,7 +147,7 @@ class SpectralCoord(u.Quantity):
 
         Returns
         -------
-        : str
+        str
             One of 'optical', 'radio', or 'relativistic' representing the
             equivalency used in the unit conversions.
         """
@@ -163,15 +167,15 @@ class SpectralCoord(u.Quantity):
 
         Parameters
         ----------
-        frame : `BaseCoordinateFrame`
-            The new observation frame.
-        target : :class:`astropy.coordinates.SkyCoord`
-            The :class:`astropy.coordinates.SkyCoord` object representing
+        frame : `BaseCoordinateFrame` or `SkyCoord`
+            The new observation frame or coordinate.
+        target : `SkyCoord`
+            The `SkyCoord` object representing
             the target of the observation.
 
         Returns
         -------
-        : `SpectralCoord`
+        `SpectralCoord`
             The new coordinate object representing the spectral data
             transformed to the new observer frame.
         """
@@ -215,7 +219,7 @@ class SpectralCoord(u.Quantity):
 
         Returns
         -------
-        : `SpectralCoord`
+        `SpectralCoord`
             New spectral coordinate object with data converted to the new unit.
         """
         if rest is not None:
