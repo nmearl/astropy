@@ -1,7 +1,7 @@
 import astropy.units as u
 import numpy as np
 from astropy.constants import c
-from astropy.coordinates import CartesianDifferential
+from astropy.coordinates import CartesianDifferential, SkyCoord
 from astropy.coordinates.baseframe import BaseCoordinateFrame
 from astropy.utils.compat import NUMPY_LT_1_14
 
@@ -80,15 +80,20 @@ class SpectralCoord(u.Quantity):
         """
         if value is not None:
             if not isinstance(value, BaseCoordinateFrame):
-                raise ValueError("`{}` is not a subclass of "
-                                 "`BaseCoordinateFrame`".format(value))
+                if isinstance(value, SkyCoord):
+                    value = value.frame
+                else:
+                    raise ValueError("`{}` is not a subclass of "
+                                     "`BaseCoordinateFrame` or "
+                                     "`SkyCoord`.".format(value))
 
             # If the observer frame does not contain information about the
             # velocity of the system, assume that the velocity is zero in the
             # system.
             if 's' not in value.data.differentials:
-                value.data.differentials = CartesianDifferential(
-                    0, 0, 0, unit=u.km/u.s)
+                value = SkyCoord(value, radial_velocity=0 * u.km/u.s).frame
+
+        return value
 
     @property
     def observer(self):
@@ -104,7 +109,7 @@ class SpectralCoord(u.Quantity):
 
     @observer.setter
     def observer(self, value):
-        self._validate_frame(value)
+        value = self._validate_frame(value)
         self._observer = value
 
     @property
@@ -121,11 +126,11 @@ class SpectralCoord(u.Quantity):
 
     @target.setter
     def target(self, value):
-        self._validate_frame(value)
+        value = self._validate_frame(value)
         self._target = value
 
     @property
-    def rest_value(self):
+    def rest(self):
         """
         The rest value of the spectrum used for transformations to/from
         velocity space.
@@ -135,12 +140,12 @@ class SpectralCoord(u.Quantity):
         `Quantity`
             Rest value as an astropy `Quantity` object.
         """
-        return self._rest_value
+        return self.rest
 
-    @rest_value.setter
+    @rest.setter
     @u.quantity_input(value=['length', 'frequency', 'energy', 'speed'])
-    def rest_value(self, value):
-        self._rest_value = value
+    def rest(self, value):
+        self.rest = value
 
     @property
     def velocity_convention(self):
@@ -185,8 +190,9 @@ class SpectralCoord(u.Quantity):
             self.target = target
 
         # If no velocities are defined in the new observer frame,
-        # assume it has zero velocity in their frame.
-        self._validate_frame(frame)
+        # assume it has zero velocity in their frame. This is handled in the
+        # frame validation.
+        frame = self._validate_frame(frame)
 
         # Get the velocity differentials for each frame
         init_obs_vel = self.target.transform_to(self.observer).velocity.get_d_xyz()
@@ -207,7 +213,7 @@ class SpectralCoord(u.Quantity):
         new_data = (self.to('hz') * (1 + delta_vel / c.cgs)).to(self.unit)
         new_coord = SpectralCoord(new_data.value,
                                   unit=new_data.unit,
-                                  rest_value=self.rest_value,
+                                  rest_value=self.rest,
                                   velocity_convention=self.velocity_convention,
                                   observer=self.observer,
                                   target=self.target)
@@ -235,7 +241,7 @@ class SpectralCoord(u.Quantity):
         # Compose the equivalencies for spectral conversions including the
         # appropriate velocity handling.
         kwargs.get('equivalencies', []).append(u.spectral() + vel_conv(
-            self.rest_value))
+            self.rest))
 
         return super().to(*args, **kwargs)
 
@@ -249,7 +255,7 @@ class SpectralCoord(u.Quantity):
         tar_frame = self.target.__class__.__name__ \
             if self.target is not None else 'None'
         return f'{prefixstr}{arrstr}{self._unitstr:s}, ' \
-            f'rest_value={self.rest_value}, ' \
+            f'rest_value={self.rest}, ' \
             f'velocity_convention={self.velocity_convention}, ' \
             f'observer={obs_frame}, target={tar_frame}>'
 
