@@ -140,12 +140,12 @@ class SpectralCoord(u.Quantity):
         `Quantity`
             Rest value as an astropy `Quantity` object.
         """
-        return self.rest
+        return self._rest
 
     @rest.setter
-    @u.quantity_input(value=['length', 'frequency', 'energy', 'speed'])
+    @u.quantity_input(value=['length', 'frequency', 'energy', 'speed', None])
     def rest(self, value):
-        self.rest = value
+        self._rest = value
 
     @property
     def velocity_convention(self):
@@ -236,12 +236,15 @@ class SpectralCoord(u.Quantity):
         if convention is not None:
             self.velocity_convention = convention
 
-        vel_conv = DOPPLER_CONVENTIONS[self.velocity_convention]
+        equivs = u.spectral()
+
+        if self.rest is not None and self.velocity_convention is not None:
+            vel_equiv = DOPPLER_CONVENTIONS[self.velocity_convention](self.rest)
+            equivs += vel_equiv
 
         # Compose the equivalencies for spectral conversions including the
         # appropriate velocity handling.
-        kwargs.get('equivalencies', []).append(u.spectral() + vel_conv(
-            self.rest))
+        kwargs.get('equivalencies', []).append(equivs)
 
         return super().to(*args, **kwargs)
 
