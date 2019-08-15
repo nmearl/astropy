@@ -168,6 +168,27 @@ class SpectralCoord(u.Quantity):
 
         self._velocity_convention = value
 
+    @property
+    def radial_velocity(self):
+        """
+        Radial velocity of target relative to the observer.
+        """
+        return self.target.radial_velocity
+
+    @radial_velocity.setter
+    @u.quantity_input(value=['speed', None])
+    def radial_velocity(self, value):
+        """
+        New radial velocity of target. Constructs a a new `SkyCoord` object
+        with the provided radial velocity.
+
+        Parameters
+        ----------
+        value : `u.Quantity`
+            New radial velocity of target relative to observer.
+        """
+        self.target = SkyCoord(self.target, radial_velocity=value).frame
+
     def transform_frame(self, frame=None, target=None):
         """
         Transform the frame of the observation.
@@ -194,20 +215,35 @@ class SpectralCoord(u.Quantity):
         # frame validation.
         frame = self._validate_frame(frame)
 
-        # Get the velocity differentials for each frame
-        init_obs_vel = self.target.transform_to(self.observer).velocity.get_d_xyz()
-        fin_obs_vel = self.target.transform_to(frame).velocity.get_d_xyz()
+        # Transform target into the old and new observer frames
+        target_wrt_old = self.target.transform_to(self.observer)
+        target_wrt_new = self.target.transform_to(frame)
 
-        # Store the new frame as the current observer frame
-        self.observer = frame
+        # Get velocities
+        init_tar_vel = target_wrt_old.velocity
+        init_obs_vel = self.observer.velocity
+
+        fin_tar_vel = target_wrt_new.velocity
+        fin_obs_vel = frame.velocity
+
+        # Get positions
+        init_tar_pos = target_wrt_old.cartesian
+        init_obs_pos = self.observer.cartesian
+
+        fin_tar_pos = target_wrt_new.cartesian
+        fin_obs_pos = frame.cartesian
 
         # Calculate the velocity shift between the two vectors
         obs_vel_shift = init_obs_vel - fin_obs_vel
+        vel_los = np.dot(obs_vel_shift, )
 
         # Project the velocity shift vector onto the the line-on-sight vector
         # between the target and the new observation frame.
         delta_vel = np.dot(obs_vel_shift, fin_obs_vel) / np.linalg.norm(
             fin_obs_vel)
+
+        # Store the new frame as the current observer frame
+        self.observer = frame
 
         # Apply the velocity shift to the stored spectral data
         new_data = (self.to('hz') * (1 + delta_vel / c.cgs)).to(self.unit)
