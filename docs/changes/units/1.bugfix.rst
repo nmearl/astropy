@@ -1,0 +1,2 @@
+Unit conversions using equivalencies no longer convert non-NumPy arrays
+(e.g., array-api-strict arrays) to NumPy arrays or raise on them.
