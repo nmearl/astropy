@@ -12,6 +12,7 @@ from astropy import constants
 from astropy import units as u
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.units.equivalencies import Equivalency
+from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 from astropy.utils.exceptions import AstropyDeprecationWarning
 
 
@@ -1042,3 +1043,60 @@ def test_magnetic_flux_field():
     assert_allclose(B.to_value(u.Oe, u.magnetic_flux_field()), 1)
     assert_allclose(H.to_value(u.G, u.magnetic_flux_field(mu_r=0.8)), 0.8)
     assert_allclose(B.to_value(u.Oe, u.magnetic_flux_field(mu_r=0.8)), 1.25)
+
+
+SCALAR_FACTOR_CONVERSIONS = [
+    pytest.param(u.spectral(), u.um, u.THz, id="spectral-wav-freq"),
+    pytest.param(u.spectral(), u.um, u.eV, id="spectral-wav-energy"),
+    pytest.param(u.spectral(), u.um, u.cm**-1, id="spectral-wav-wavenumber"),
+    pytest.param(u.doppler_radio(1 * u.GHz), u.GHz, u.km / u.s, id="doppler_radio"),
+    pytest.param(u.doppler_optical(1 * u.GHz), u.GHz, u.km / u.s, id="doppler_optical"),
+    pytest.param(
+        u.doppler_relativistic(1 * u.GHz),
+        u.GHz,
+        u.km / u.s,
+        id="doppler_relativistic",
+    ),
+    pytest.param(u.mass_energy(), u.kg, u.J, id="mass_energy"),
+    pytest.param(u.temperature_energy(), u.K, u.eV, id="temperature_energy"),
+    pytest.param(
+        u.spectral_density(1 * u.AA),
+        u.Jy,
+        u.erg / u.s / u.cm**2 / u.AA,
+        id="spectral_density",
+    ),
+    pytest.param(
+        u.brightness_temperature(1 * u.GHz), u.Jy / u.sr, u.K, id="brightness_temp"
+    ),
+    pytest.param(
+        u.thermodynamic_temperature(100 * u.GHz, T_cmb=2.7 * u.K),
+        u.Jy / u.sr,
+        u.K,
+        id="thermodynamic_temp",
+    ),
+    pytest.param(u.plate_scale(1 * u.arcsec / u.mm), u.mm, u.arcsec, id="plate_scale"),
+    pytest.param(u.magnetic_flux_field(), u.T, u.A / u.m, id="magnetic_flux_field"),
+]
+
+
+@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
+@pytest.mark.parametrize("equivalency, unit1, unit2", SCALAR_FACTOR_CONVERSIONS)
+def test_scalar_factor_conversions_keep_array_type(equivalency, unit1, unit2):
+    import array_api_strict as xp
+
+    values = [1.0, 2.0]
+    for a, b in [(unit1, unit2), (unit2, unit1)]:
+        result = a.to(b, xp.asarray(values), equivalencies=equivalency)
+        assert isinstance(result, xp.asarray(0.0).__class__)
+        assert_allclose(
+            np.asarray(result), a.to(b, np.asarray(values), equivalencies=equivalency)
+        )
+
+
+@pytest.mark.parametrize("equivalency, unit1, unit2", SCALAR_FACTOR_CONVERSIONS)
+def test_scalar_factor_conversions_types(equivalency, unit1, unit2):
+    # Like plain unit conversions, scalars give a Python float, and float32
+    # is not upcast.
+    assert type(unit1.to(unit2, equivalencies=equivalency)) is float
+    x = np.array([1.0, 2.0], dtype=np.float32)
+    assert unit1.to(unit2, x, equivalencies=equivalency).dtype == np.float32
