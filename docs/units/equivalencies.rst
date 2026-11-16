@@ -157,7 +157,7 @@ These equivalencies even work with non-base units::
   >>> # Inches to calories
   >>> from astropy.units import imperial
   >>> imperial.inch.to(imperial.Cal, equivalencies=u.spectral())  # doctest: +FLOAT_CMP
-  np.float64(1.869180759162485e-27)
+  1.8691809227775558e-27
 
 .. EXAMPLE END
 

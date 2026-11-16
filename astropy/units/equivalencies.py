@@ -47,8 +47,20 @@ __all__ = [
     "zero_point_flux",
 ]
 
+
+def _scalar(value):
+    """Return NumPy scalars and 0-d arrays as Python scalars.
+
+    NumPy scalar conversion factors would impose NumPy's array type and dtype
+    on the values being converted. Other values are returned unchanged.
+    """
+    if isinstance(value, (np.generic, np.ndarray)) and value.ndim == 0:
+        return value.item()
+    return value
+
+
 km_per_s: Final = si.km / si.s
-ckms: Final = _si.c.to_value(km_per_s)
+ckms: Final = _scalar(_si.c.to_value(km_per_s))
 
 
 class Equivalency(list):
@@ -149,8 +161,8 @@ def spectral():
         * angular - :math:`2 \\pi / \\lambda` (radian per meter)
 
     """
-    c = _si.c.value
-    h = _si.h.value
+    c = _scalar(_si.c.value)
+    h = _scalar(_si.h.value)
     hc = h * c
     two_pi = 2.0 * np.pi
     inv_m_spec = si.m**-1
@@ -202,9 +214,12 @@ def spectral_density(wav, factor=None):
         if factor is None:
             raise ValueError("If `wav` is specified as a unit, `factor` should be set")
         wav = factor * wav  # Convert to Quantity
-    c_Aps = _si.c.to_value(si.AA / si.s)  # Angstrom/s
-    h_cgs = _si.h.cgs.value  # erg * s
+    c_Aps = _scalar(_si.c.to_value(si.AA / si.s))  # Angstrom/s
+    h_cgs = _scalar(_si.h.cgs.value)  # erg * s
     hc = c_Aps * h_cgs
+
+    def wav_in(unit):
+        return _scalar(wav.to_value(unit, spectral()))
 
     # flux density
     f_la = cgs.erg / si.angstrom / si.cm**2 / si.s
@@ -240,49 +255,49 @@ def spectral_density(wav, factor=None):
     phot_SL_nu = astrophys.photon / (si.s * si.Hz * si.sr)
 
     def f_la_to_f_nu(x):
-        return x * (wav.to_value(si.AA, spectral()) ** 2 / c_Aps)
+        return x * (wav_in(si.AA) ** 2 / c_Aps)
 
     def f_la_from_f_nu(x):
-        return x / (wav.to_value(si.AA, spectral()) ** 2 / c_Aps)
+        return x / (wav_in(si.AA) ** 2 / c_Aps)
 
     def f_nu_to_nu_f_nu(x):
-        return x * wav.to_value(si.Hz, spectral())
+        return x * wav_in(si.Hz)
 
     def f_nu_from_nu_f_nu(x):
-        return x / wav.to_value(si.Hz, spectral())
+        return x / wav_in(si.Hz)
 
     def f_la_to_la_f_la(x):
-        return x * wav.to_value(si.AA, spectral())
+        return x * wav_in(si.AA)
 
     def f_la_from_la_f_la(x):
-        return x / wav.to_value(si.AA, spectral())
+        return x / wav_in(si.AA)
 
     def phot_f_la_to_f_la(x):
-        return hc * x / wav.to_value(si.AA, spectral())
+        return hc * x / wav_in(si.AA)
 
     def phot_f_la_from_f_la(x):
-        return x * wav.to_value(si.AA, spectral()) / hc
+        return x * wav_in(si.AA) / hc
 
     def phot_f_la_to_f_nu(x):
-        return h_cgs * x * wav.to_value(si.AA, spectral())
+        return h_cgs * x * wav_in(si.AA)
 
     def phot_f_la_from_f_nu(x):
-        return x / (wav.to_value(si.AA, spectral()) * h_cgs)
+        return x / (wav_in(si.AA) * h_cgs)
 
     def phot_f_la_to_phot_f_nu(x):
-        return x * wav.to_value(si.AA, spectral()) ** 2 / c_Aps
+        return x * wav_in(si.AA) ** 2 / c_Aps
 
     def phot_f_la_from_phot_f_nu(x):
-        return c_Aps * x / wav.to_value(si.AA, spectral()) ** 2
+        return c_Aps * x / wav_in(si.AA) ** 2
 
     phot_f_nu_to_f_nu = phot_f_la_to_f_la
     phot_f_nu_from_f_nu = phot_f_la_from_f_la
 
     def phot_f_nu_to_f_la(x):
-        return x * hc * c_Aps / wav.to_value(si.AA, spectral()) ** 3
+        return x * hc * c_Aps / wav_in(si.AA) ** 3
 
     def phot_f_nu_from_f_la(x):
-        return x * wav.to_value(si.AA, spectral()) ** 3 / (hc * c_Aps)
+        return x * wav_in(si.AA) ** 3 / (hc * c_Aps)
 
     # for luminosity density
     L_nu_to_nu_L_nu = f_nu_to_nu_f_nu
@@ -376,7 +391,10 @@ def doppler_radio(rest):
     <Quantity -31.209092088877583 km / s>
     """
     assert_is_spectral_unit(rest)
-    rest_in = functools.partial(rest.to_value, equivalencies=spectral())
+
+    def rest_in(unit):
+        return _scalar(rest.to_value(unit, equivalencies=spectral()))
+
     to_funcs = {
         misc.eV: lambda x: (1 - x / rest_in(misc.eV)) * ckms,
         si.Hz: lambda x: (1 - x / rest_in(si.Hz)) * ckms,
@@ -426,7 +444,10 @@ def doppler_optical(rest):
     <Quantity -31.20584348799674 km / s>
     """
     assert_is_spectral_unit(rest)
-    rest_in = functools.partial(rest.to_value, equivalencies=spectral())
+
+    def rest_in(unit):
+        return _scalar(rest.to_value(unit, equivalencies=spectral()))
+
     to_funcs = {
         misc.eV: lambda x: (rest_in(misc.eV) / x - 1) * ckms,
         si.Hz: lambda x: (rest_in(si.Hz) / x - 1) * ckms,
@@ -483,7 +504,9 @@ def doppler_relativistic(rest):
     <Quantity 2.6116243681798923 mm>
     """
     assert_is_spectral_unit(rest)
-    rest_in = functools.partial(rest.to_value, equivalencies=spectral())
+
+    def rest_in(unit):
+        return _scalar(rest.to_value(unit, equivalencies=spectral()))
 
     def to_vel_freq(x):
         restfreq2 = rest_in(si.Hz) ** 2
@@ -532,7 +555,7 @@ def doppler_redshift():
 
     """
     rv_unit = si.km / si.s
-    C_KMS = _si.c.to_value(rv_unit)
+    C_KMS = _scalar(_si.c.to_value(rv_unit))
 
     def convert_z_to_rv(z):
         zponesq = (1 + z) ** 2
@@ -562,7 +585,7 @@ def mass_energy():
     Returns a list of equivalence pairs that handle the conversion
     between mass and energy.
     """
-    c2 = _si.c.value**2
+    c2 = _scalar(_si.c.value) ** 2
     return Equivalency(
         [
             (si.kg, si.J, lambda x: x * c2, lambda x: x / c2),
@@ -632,11 +655,11 @@ def brightness_temperature(frequency, beam_area=None):
         <Quantity 130.1931904778803 K>
     """
     nu = frequency.to(si.GHz, spectral())
-    factor_Jy = (2 * _si.k_B * si.K * nu**2 / _si.c**2).to(astrophys.Jy).value
-    factor_K = (astrophys.Jy / (2 * _si.k_B * nu**2 / _si.c**2)).to(si.K).value
+    factor_Jy = _scalar((2 * _si.k_B * si.K * nu**2 / _si.c**2).to_value(astrophys.Jy))
+    factor_K = _scalar((astrophys.Jy / (2 * _si.k_B * nu**2 / _si.c**2)).to_value(si.K))
 
     if beam_area is not None:
-        beam = beam_area.to_value(si.sr)
+        beam = _scalar(beam_area.to_value(si.sr))
 
         def convert_Jy_to_K(x_jybm):
             return x_jybm / beam / factor_Jy
@@ -744,12 +767,14 @@ def thermodynamic_temperature(frequency, T_cmb=None):
         return x**2 * np.exp(x) / np.expm1(x) ** 2
 
     def convert_Jy_to_K(x_jybm):
-        factor = (f(nu) * 2 * _si.k_B * si.K * nu**2 / _si.c**2).to_value(astrophys.Jy)
+        factor = _scalar(
+            (f(nu) * 2 * _si.k_B * si.K * nu**2 / _si.c**2).to_value(astrophys.Jy)
+        )
         return x_jybm / factor
 
     def convert_K_to_Jy(x_K):
-        factor = (astrophys.Jy / (f(nu) * 2 * _si.k_B * nu**2 / _si.c**2)).to_value(
-            si.K
+        factor = _scalar(
+            (astrophys.Jy / (f(nu) * 2 * _si.k_B * nu**2 / _si.c**2)).to_value(si.K)
         )
         return x_K / factor
 
@@ -783,8 +808,8 @@ def temperature():
 @functools.cache
 def temperature_energy():
     """Convert between Kelvin and keV(eV) to an equivalent amount."""
-    e = _si.e.value
-    k_B = _si.k_B.value
+    e = _scalar(_si.e.value)
+    k_B = _scalar(_si.k_B.value)
     return Equivalency(
         [(si.K, misc.eV, lambda x: x / (e / k_B), lambda x: x * (e / k_B))],
         "temperature_energy",
@@ -840,9 +865,9 @@ def plate_scale(platescale):
         The pixel scale either in units of distance/pixel or distance/angle.
     """
     if platescale.unit.is_equivalent(si.arcsec / si.m):
-        platescale_val = platescale.to_value(si.radian / si.m)
+        platescale_val = _scalar(platescale.to_value(si.radian / si.m))
     elif platescale.unit.is_equivalent(si.m / si.arcsec):
-        platescale_val = (1 / platescale).to_value(si.radian / si.m)
+        platescale_val = _scalar((1 / platescale).to_value(si.radian / si.m))
     else:
         raise UnitsError("The pixel scale must be in angle/distance or distance/angle")
 
@@ -890,7 +915,7 @@ def magnetic_flux_field(mu_r=1):
     <Quantity 994718.39378285 A / m>
 
     """
-    mu0 = _si.mu0.value
+    mu0 = _scalar(_si.mu0.value)
     return Equivalency(
         [(si.T, si.A / si.m, lambda x: x / (mu_r * mu0), lambda x: x * mu_r * mu0)],
         "magnetic_flux_field",
