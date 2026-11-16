@@ -185,6 +185,11 @@ def spectral():
     )
 
 
+def _spectral_value(quantity, unit):
+    """Value of a spectral ``quantity`` in ``unit``, as a conversion factor."""
+    return _scalar(quantity.to_value(unit, equivalencies=spectral()))
+
+
 @deprecated_renamed_argument(
     "factor", None, since="7.0", alternative='"wav" as a "Quantity"'
 )
@@ -217,9 +222,7 @@ def spectral_density(wav, factor=None):
     c_Aps = _scalar(_si.c.to_value(si.AA / si.s))  # Angstrom/s
     h_cgs = _scalar(_si.h.cgs.value)  # erg * s
     hc = c_Aps * h_cgs
-
-    def wav_in(unit):
-        return _scalar(wav.to_value(unit, spectral()))
+    wav_in = functools.partial(_spectral_value, wav)
 
     # flux density
     f_la = cgs.erg / si.angstrom / si.cm**2 / si.s
@@ -391,9 +394,7 @@ def doppler_radio(rest):
     <Quantity -31.209092088877583 km / s>
     """
     assert_is_spectral_unit(rest)
-
-    def rest_in(unit):
-        return _scalar(rest.to_value(unit, equivalencies=spectral()))
+    rest_in = functools.partial(_spectral_value, rest)
 
     to_funcs = {
         misc.eV: lambda x: (1 - x / rest_in(misc.eV)) * ckms,
@@ -444,9 +445,7 @@ def doppler_optical(rest):
     <Quantity -31.20584348799674 km / s>
     """
     assert_is_spectral_unit(rest)
-
-    def rest_in(unit):
-        return _scalar(rest.to_value(unit, equivalencies=spectral()))
+    rest_in = functools.partial(_spectral_value, rest)
 
     to_funcs = {
         misc.eV: lambda x: (rest_in(misc.eV) / x - 1) * ckms,
@@ -504,9 +503,7 @@ def doppler_relativistic(rest):
     <Quantity 2.6116243681798923 mm>
     """
     assert_is_spectral_unit(rest)
-
-    def rest_in(unit):
-        return _scalar(rest.to_value(unit, equivalencies=spectral()))
+    rest_in = functools.partial(_spectral_value, rest)
 
     def to_vel_freq(x):
         restfreq2 = rest_in(si.Hz) ** 2
