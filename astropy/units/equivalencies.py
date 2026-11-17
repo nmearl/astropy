@@ -16,6 +16,7 @@ import numpy as np
 # LOCAL
 from astropy.constants import si as _si
 from astropy.utils import deprecated_renamed_argument
+from astropy.utils.compat.array_api import array_namespace
 
 from . import astrophys, cgs, misc, si
 from .core import Unit, dimensionless_unscaled
@@ -114,8 +115,12 @@ def dimensionless_angles():
 @functools.cache
 def logarithmic():
     """Allow logarithmic units to be converted to dimensionless fractions."""
+
+    def log10(x):
+        return array_namespace(x).log10(x)
+
     return Equivalency(
-        [(dimensionless_unscaled, function_units.dex, np.log10, lambda x: 10.0**x)],
+        [(dimensionless_unscaled, function_units.dex, log10, lambda x: 10.0**x)],
         "logarithmic",
     )
 
@@ -128,18 +133,14 @@ def parallax():
     """
 
     def parallax_converter(x):
-        x = np.asanyarray(x)
+        xp = array_namespace(x)
+
+        if not hasattr(x, "__array_namespace__"):
+            x = xp.asarray(x)
+
         d = 1 / x
 
-        if np.iterable(d):
-            d[d < 0] = np.nan
-            return d
-
-        else:
-            if d < 0:
-                return np.array(np.nan)
-            else:
-                return d
+        return xp.where(d < 0, xp.nan, d)
 
     return Equivalency(
         [(si.arcsecond, astrophys.parsec, parallax_converter)], "parallax"
@@ -560,7 +561,7 @@ def doppler_redshift():
 
     def convert_rv_to_z(rv):
         beta = rv / C_KMS
-        return np.sqrt((1 + beta) / (1 - beta)) - 1
+        return array_namespace(beta).sqrt((1 + beta) / (1 - beta)) - 1
 
     return Equivalency(
         [(dimensionless_unscaled, rv_unit, convert_z_to_rv, convert_rv_to_z)],
