@@ -1,0 +1,2 @@
+The ``logarithmic``, ``parallax``, and ``doppler_redshift`` equivalencies
+no longer convert non-NumPy arrays to NumPy arrays.
