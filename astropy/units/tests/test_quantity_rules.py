@@ -144,17 +144,33 @@ def test_enabled_equivalencies_offset():
     assert conv2(0.0) == pytest.approx(-273.15)
 
 
-def test_enabled_equivalencies_not_cached():
+def test_enabled_equivalencies_are_part_of_cache_key():
     _cached_plan.cache_clear()
 
     with u.set_enabled_equivalencies(u.temperature()):
         plan(rules.same_unit, (u.deg_C, u.K))
 
-    assert _cached_plan.cache_info().currsize == 0
-
     # Outside the context, the conversion is no longer possible.
     with pytest.raises(u.UnitConversionError):
         plan(rules.same_unit, (u.deg_C, u.K))
+
+    # Within a new context with the same equivalencies, it is again.
+    with u.set_enabled_equivalencies(u.temperature()):
+        plan(rules.same_unit, (u.deg_C, u.K))
+
+
+def test_memoized_with_enabled_equivalencies():
+    # Some equivalencies are enabled for good (e.g. on importing
+    # astropy.cosmology), which should not stop memoization.
+    with u.add_enabled_equivalencies(u.dimensionless_angles()):
+        _cached_plan.cache_clear()
+
+        for _ in range(3):
+            assert plan(rules.radian_to_dimensionless, (u.one,))[1] == u.one
+
+        info = _cached_plan.cache_info()
+
+    assert (info.misses, info.hits) == (1, 2)
 
 
 def test_rule_tables_cover_ufuncs():
