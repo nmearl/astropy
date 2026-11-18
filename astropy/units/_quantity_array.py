@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import numbers
+
 import array_api_compat
 import numpy as np
 
@@ -10,6 +12,7 @@ from astropy.units.core import CompositeUnit, Unit, UnitBase, dimensionless_unsc
 from astropy.units.errors import UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
 from astropy.units.quantity_helper import namespace as _namespace
+from astropy.units.quantity_helper.rules import converter
 from astropy.utils.compat.array_api import array_namespace, default_floating_dtype
 
 __all__ = ["Quantity"]
@@ -25,6 +28,40 @@ def _as_unit(unit):
         )
 
     return unit
+
+
+def _is_operand(x):
+    """Whether ``x`` can be combined with a quantity in arithmetic."""
+    return isinstance(
+        x, (Quantity, _LegacyQuantity, numbers.Number)
+    ) or array_api_compat.is_array_api_obj(x)
+
+
+def _binary_op(name, reflected=False):
+    """An operator that calls the binary namespace function ``name``."""
+
+    def op(self, other):
+        if not _is_operand(other):
+            return NotImplemented
+
+        func = getattr(self.__array_namespace__(), name)
+
+        return func(other, self) if reflected else func(self, other)
+
+    op.__name__ = f"__{'r' if reflected else ''}{name}__"
+
+    return op
+
+
+def _unary_op(name):
+    """An operator that calls the unary namespace function ``name``."""
+
+    def op(self):
+        return getattr(self.__array_namespace__(), name)(self)
+
+    op.__name__ = f"__{name}__"
+
+    return op
 
 
 class Quantity:
@@ -48,13 +85,18 @@ class Quantity:
 
     Notes
     -----
-    The unit of a quantity never changes.
+    Whether the value can be changed in place (e.g. ``q[0] = 1 * u.m``)
+    depends on the array library. Augmented assignments like ``q *= u.s`` give
+    a new quantity.
     """
 
     __slots__ = ("_unit", "_value")
 
     # numpy functions should not silently drop the unit.
     __array_ufunc__ = None
+
+    # Quantities are mutable, and == gives an array.
+    __hash__ = None
 
     def __init__(self, value, unit=None, dtype=None, copy=True, *, device=None):
         if isinstance(value, Quantity):
@@ -139,6 +181,26 @@ class Quantity:
     def __getitem__(self, key):
         return self._new(self._value[key], self._unit)
 
+    def __setitem__(self, key, value):
+        value, unit = _namespace.split(value)
+        conv = converter(unit, self._unit, "setitem")
+        value = _namespace.apply_converter(value, conv)
+        xp = array_namespace(self._value)
+
+        if xp.isdtype(self.dtype, "integral"):
+            # Allow values that are exactly integers, but not ones that would
+            # be truncated (e.g. 50 cm into an integer array in m).
+            value = xp.asarray(value)
+
+            if not xp.isdtype(value.dtype, ("integral", "bool")) and not bool(
+                xp.all(xp.astype(value, self.dtype) == value)
+            ):
+                raise TypeError(
+                    "cannot convert value type to array type without precision loss"
+                )
+
+        self._value[key] = value
+
     def __len__(self):
         if self.ndim == 0:
             raise TypeError(
@@ -152,6 +214,81 @@ class Quantity:
                 f"'{type(self).__name__}' object with a scalar value is not iterable"
             )
         return (self[i] for i in range(self.shape[0]))
+
+    __add__ = _binary_op("add")
+    __radd__ = _binary_op("add", reflected=True)
+    __sub__ = _binary_op("subtract")
+    __rsub__ = _binary_op("subtract", reflected=True)
+    __floordiv__ = _binary_op("floor_divide")
+    __rfloordiv__ = _binary_op("floor_divide", reflected=True)
+    __mod__ = _binary_op("remainder")
+    __rmod__ = _binary_op("remainder", reflected=True)
+    __matmul__ = _binary_op("matmul")
+    __rmatmul__ = _binary_op("matmul", reflected=True)
+    __lt__ = _binary_op("less")
+    __le__ = _binary_op("less_equal")
+    __gt__ = _binary_op("greater")
+    __ge__ = _binary_op("greater_equal")
+    __neg__ = _unary_op("negative")
+    __pos__ = _unary_op("positive")
+    __abs__ = _unary_op("abs")
+
+    def __mul__(self, other):
+        if isinstance(other, UnitBase):
+            return self._new(self._value, self._unit * other)
+
+        if not _is_operand(other):
+            return NotImplemented
+
+        return self.__array_namespace__().multiply(self, other)
+
+    def __rmul__(self, other):
+        if isinstance(other, UnitBase):
+            return self._new(self._value, other * self._unit)
+
+        if not _is_operand(other):
+            return NotImplemented
+
+        return self.__array_namespace__().multiply(other, self)
+
+    def __truediv__(self, other):
+        if isinstance(other, UnitBase):
+            return self._new(self._value, self._unit / other)
+
+        if not _is_operand(other):
+            return NotImplemented
+
+        return self.__array_namespace__().divide(self, other)
+
+    def __rtruediv__(self, other):
+        if isinstance(other, UnitBase):
+            result = self.__array_namespace__().divide(1.0, self)
+
+            return result._new(result._value, other * result._unit)
+
+        if not _is_operand(other):
+            return NotImplemented
+
+        return self.__array_namespace__().divide(other, self)
+
+    def __eq__(self, other):
+        # As for numpy arrays, incomparable quantities are simply not equal.
+        if not _is_operand(other):
+            return NotImplemented
+
+        try:
+            return self.__array_namespace__().equal(self, other)
+        except UnitsError:
+            return False
+
+    def __ne__(self, other):
+        if not _is_operand(other):
+            return NotImplemented
+
+        try:
+            return self.__array_namespace__().not_equal(self, other)
+        except UnitsError:
+            return True
 
     def __bool__(self):
         raise ValueError(
