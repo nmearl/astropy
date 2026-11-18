@@ -105,6 +105,9 @@ class Quantity:
         """The unit."""
         return self._unit
 
+    def __array_namespace__(self, *, api_version=None):
+        return _namespace.namespace_for(self._value, api_version)
+
     @property
     def dtype(self):
         return self._value.dtype
