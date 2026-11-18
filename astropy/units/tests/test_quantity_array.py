@@ -95,6 +95,17 @@ class TestConstruction:
     def test_explicit_dtype_is_kept(self):
         assert Quantity([1, 2], u.m, dtype=np.int32).dtype == np.int32
 
+    def test_dtype_none_keeps_integers(self):
+        assert Quantity([1, 2], u.m, dtype=None).dtype == np.int64
+
+    def test_booleans_are_kept(self):
+        assert Quantity([True, False]).dtype == bool
+
+    def test_integer_conversion_configuration(self):
+        with u.preserve_dtype_by_default():
+            assert Quantity([1, 2], u.m).dtype == np.int64
+            assert Quantity([1, 2], u.m, dtype=np.inexact).dtype == np.float64
+
     def test_scalar_is_0d_array(self):
         result = Quantity(1.5, u.s)
 
@@ -350,10 +361,18 @@ class TestConversion:
         assert_quantity(a << u.m, [1000.0, 2000.0], u.m, xp)
         assert_allclose(to_numpy(a.to_value(u.m)), [1000.0, 2000.0])
         assert a.to_value() is a.value
-        assert a.to(u.km).value is a.value
+        assert (a << u.km).value is a.value
+        assert a.to(u.km, copy=False).value is a.value
 
         with pytest.raises(u.UnitConversionError):
             a.to(u.s)
+
+    def test_to_copies(self):
+        a = Quantity([1.0, 2.0], u.km)
+        b = a.to(u.km)
+        b[0] = Quantity(5.0, u.km)
+
+        assert_array_equal(a.value, [1.0, 2.0])
 
     def test_to_keeps_dtype(self, xp):
         a = Quantity(xp.asarray([1.0, 2.0], dtype=xp.float32), u.km)
@@ -406,6 +425,11 @@ class TestConversion:
 
         with pytest.raises(TypeError, match="drop the unit"):
             np.asarray(Quantity([1.0, 2.0], u.m))
+
+        # Only units that are dimensionless without equivalencies.
+        with u.set_enabled_equivalencies(u.dimensionless_angles()):
+            with pytest.raises(TypeError, match="drop the unit"):
+                np.asarray(Quantity(1.0, u.rad))
 
     def test_numpy_ufuncs_do_not_drop_units(self):
         with pytest.raises(TypeError):
