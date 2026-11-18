@@ -705,6 +705,106 @@ class TestUnitFromArguments:
             ns.where(condition, a, q(xp, 1.0, u.s))
 
 
+class TestCombining:
+    def test_concat_and_stack(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.km)
+        b = q(xp, [500.0], u.m)
+
+        assert_quantity(ns.concat([a, b]), [1.0, 2.0, 0.5], u.km, xp)
+        assert_quantity(ns.concat((b, a)), [500.0, 1000.0, 2000.0], u.m, xp)
+        assert_quantity(ns.stack([a, a], axis=1), [[1, 1], [2, 2]], u.km, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.concat([a, q(xp, [1.0], u.s)])
+
+    def test_unstack(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        first, second = ns.unstack(q(xp, [[1.0, 2.0], [3.0, 4.0]], u.km))
+
+        assert_quantity(first, [1.0, 2.0], u.km, xp)
+        assert_quantity(second, [3.0, 4.0], u.km, xp)
+
+    def test_broadcast_arrays_and_meshgrid(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.km)
+        b = MyQuantity(xp.asarray([[3.0]]), u.s)
+        plain = xp.asarray([5.0])
+        x, y, z = ns.broadcast_arrays(a, b, plain)
+
+        assert_quantity(x, [[1.0, 2.0]], u.km, xp)
+        assert_quantity(y, [[3.0, 3.0]], u.s, xp)
+        assert not isinstance(z, Quantity)
+        # Each result has the class of its own input.
+        assert type(x) is Quantity
+        assert type(y) is MyQuantity
+
+        x, y = ns.meshgrid(a, q(xp, [1.0, 2.0, 3.0], u.s))
+
+        assert x.shape == (3, 2)
+        assert (x.unit, y.unit) == (u.km, u.s)
+
+
+class TestSearchingAndSets:
+    def test_searchsorted(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0, 3.0], u.km)
+        result = ns.searchsorted(a, q(xp, [1500.0, 2500.0], u.m))
+
+        assert not isinstance(result, Quantity)
+        assert_array_equal(to_numpy(result), [1, 2])
+
+        with pytest.raises(u.UnitConversionError):
+            ns.searchsorted(a, q(xp, [1.0], u.s))
+
+    def test_isin(self, xp):
+        if not hasattr(xp, "isin"):
+            pytest.skip("isin not available")
+
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        # array-api-strict only allows integers for isin.
+        a = Quantity(xp.asarray([1, 2]), u.km, dtype=None)
+        result = ns.isin(a, Quantity(xp.asarray([2]), u.km, dtype=None))
+
+        assert_array_equal(to_numpy(result), [False, True])
+
+        with pytest.raises(u.UnitConversionError):
+            ns.isin(a, Quantity(xp.asarray([2]), u.s, dtype=None))
+
+        if xp.__name__ != "array_api_strict":
+            result = ns.isin(q(xp, [1.0, 2.0], u.km), q(xp, [1000.0], u.m))
+
+            assert_array_equal(to_numpy(result), [True, False])
+
+    def test_unique(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [2.0, 1.0, 2.0], u.m)
+
+        assert_quantity(ns.unique_values(a), [1.0, 2.0], u.m, xp)
+
+        result = ns.unique_counts(a)
+
+        assert_quantity(result.values, [1.0, 2.0], u.m, xp)
+        assert_array_equal(to_numpy(result.counts), [1, 2])
+
+        result = ns.unique_inverse(a)
+
+        assert_quantity(result.values, [1.0, 2.0], u.m, xp)
+        assert_array_equal(to_numpy(result.inverse_indices), [1, 0, 1])
+        assert ns.unique_all(a).values.unit is u.m
+
+
+class TestDtypeFunctions:
+    def test_dtype_functions(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, 1.0, u.m)
+
+        assert ns.result_type(a, xp.float32) == xp.result_type(a.value, xp.float32)
+        assert ns.can_cast(a.dtype, xp.float32) == xp.can_cast(xp.float64, xp.float32)
+        assert ns.finfo(a).eps == xp.finfo(xp.float64).eps
+        assert ns.iinfo(xp.int32).max == 2**31 - 1
+
+
 class TestEquivalencies:
     def test_enabled_equivalencies(self, xp):
         ns = q(xp, 1.0, u.m).__array_namespace__()
