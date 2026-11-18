@@ -189,6 +189,10 @@ class Quantity:
     def T(self):
         return self._new(self._value.T, self._unit)
 
+    @property
+    def mT(self):
+        return self.__array_namespace__().matrix_transpose(self)
+
     def __getitem__(self, key):
         return self._new(self._value[key], self._unit)
 
