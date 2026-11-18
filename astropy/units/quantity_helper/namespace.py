@@ -39,6 +39,7 @@ from .rules import (
     plan,
     prod_rule,
     same_unit,
+    same_unit_to_plain,
     static_power,
 )
 
@@ -207,6 +208,38 @@ def _function(xp, name):
     return function
 
 
+def _values(arrays):
+    return [split(array)[0] for array in arrays]
+
+
+def _with_own_unit(result, array):
+    """``result`` with the unit of ``array``, as an instance of its class."""
+    unit = split(array)[1]
+
+    if not _is_quantity_unit(unit):
+        return result
+
+    if isinstance(array, _quantity_array.Quantity):
+        return array._new(result, unit)
+
+    return _quantity_array.Quantity._new(result, unit)
+
+
+def _each_own_unit(results, arrays):
+    """Results that each have the unit and class of the corresponding input."""
+    return type(results)(map(_with_own_unit, results, arrays))
+
+
+def _with_values_unit(result, x):
+    """A named tuple from unique_counts, etc, with ``values`` in the unit of x."""
+    unit = split(x)[1]
+
+    if not _is_quantity_unit(unit):
+        return result
+
+    return result._replace(values=_wrap(result.values, unit, (x,)))
+
+
 class QuantityNamespace:
     """An Array API namespace for quantities, wrapping that of their values.
 
@@ -337,6 +370,83 @@ class QuantityNamespace:
         result = self._xp.diff(values[0], axis=axis, n=n, **kwargs)
 
         return _wrap(result, unit, (x,))
+
+    def concat(self, arrays, /, *, axis=0):
+        """Arrays joined along an existing axis, converted to a common unit."""
+        arrays = tuple(arrays)
+        values, unit = _converted("concat", arrays)
+
+        return _wrap(self._xp.concat(values, axis=axis), unit, arrays)
+
+    def stack(self, arrays, /, *, axis=0):
+        """Arrays joined along a new axis, converted to a common unit."""
+        arrays = tuple(arrays)
+        values, unit = _converted("stack", arrays)
+
+        return _wrap(self._xp.stack(values, axis=axis), unit, arrays)
+
+    def unstack(self, x, /, *, axis=0):
+        """Arrays split along an axis, each with the unit of x."""
+        value, unit = split(x)
+        results = self._xp.unstack(value, axis=axis)
+
+        if not _is_quantity_unit(unit):
+            return results
+
+        return tuple(_wrap(result, unit, (x,)) for result in results)
+
+    def broadcast_arrays(self, *arrays):
+        """Arrays broadcast against each other, each keeping its unit."""
+        results = self._xp.broadcast_arrays(*_values(arrays))
+
+        return _each_own_unit(results, arrays)
+
+    def meshgrid(self, *arrays, indexing="xy"):
+        """Coordinate grids, each with the unit of its input."""
+        results = self._xp.meshgrid(*_values(arrays), indexing=indexing)
+
+        return _each_own_unit(results, arrays)
+
+    def searchsorted(self, x1, x2, /, *, side="left", sorter=None):
+        """Indices to insert x2 into x1, after conversion to a common unit."""
+        _check_arguments("searchsorted", (sorter,), {})
+        (v1, v2), _ = _converted("searchsorted", (x1, x2), same_unit_to_plain)
+
+        return self._xp.searchsorted(v1, v2, side=side, sorter=sorter)
+
+    def isin(self, x1, x2, /, *, invert=False):
+        """Whether elements of x1 are in x2, after conversion to a common unit."""
+        (v1, v2), _ = _converted("isin", (x1, x2), same_unit_to_plain)
+
+        return self._xp.isin(v1, v2, invert=invert)
+
+    def unique_all(self, x, /):
+        """Unique elements, etc; the unique values have the unit of x."""
+        return _with_values_unit(self._xp.unique_all(split(x)[0]), x)
+
+    def unique_counts(self, x, /):
+        """Unique elements and counts; the unique values have the unit of x."""
+        return _with_values_unit(self._xp.unique_counts(split(x)[0]), x)
+
+    def unique_inverse(self, x, /):
+        """Unique elements and inverse indices; the values have the unit of x."""
+        return _with_values_unit(self._xp.unique_inverse(split(x)[0]), x)
+
+    def result_type(self, *arrays_and_dtypes):
+        """The result data type, from the values of any quantities."""
+        return self._xp.result_type(*_values(arrays_and_dtypes))
+
+    def can_cast(self, from_, to, /):
+        """Whether a cast is possible, from the value of any quantity."""
+        return self._xp.can_cast(split(from_)[0], to)
+
+    def finfo(self, type, /):
+        """Floating point limits, from the value of any quantity."""
+        return self._xp.finfo(split(type)[0])
+
+    def iinfo(self, type, /):
+        """Integer limits, from the value of any quantity."""
+        return self._xp.iinfo(split(type)[0])
 
 
 @functools.cache
