@@ -31,20 +31,19 @@ ARBITRARY = _Arbitrary()
 
 
 @functools.lru_cache(maxsize=4096)
-def _cached_plan(rule, units, static):
+def _cached_plan(rule, units, static, equivalencies):
     return rule(*units, **dict(static))
 
 
 def plan(rule: Callable, units: tuple, static: tuple = ()) -> tuple:
     """
     Memoized evaluation of ``rule`` definitions. Caches evaluated unit algebra for
-    faster subsequent lookup, except while equivalencies are enabled, since those can
-    give converters that are only valid within their context.
+    faster subsequent lookup. Since enabled equivalencies can give converters that
+    are only valid within their context, they are part of the cache key.
     """
-    if get_current_unit_registry()._equivalencies:
-        return rule(*units, **dict(static))
+    equivalencies = frozenset(get_current_unit_registry()._equivalencies)
 
-    return _cached_plan(rule, units, static)
+    return _cached_plan(rule, units, static, equivalencies)
 
 
 def _unit_or_dimensionless(unit):
