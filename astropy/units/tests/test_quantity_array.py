@@ -174,6 +174,7 @@ class TestAttributes:
         assert a.device == array_api_compat.device(a.value)
         assert_quantity(a.T, to_numpy(a).T, u.m, xp)
         assert_quantity(a.to_device(a.device), to_numpy(a), u.m, xp)
+        assert_quantity(a.mT, to_numpy(a).T, u.m, xp)
 
     def test_value_and_unit_are_read_only(self):
         a = Quantity(1.0, u.m)
@@ -458,6 +459,12 @@ class TestNamespace:
         with pytest.raises(AttributeError):
             ns.no_such_function
 
+    def test_mixed_namespaces(self, xp):
+        a = q(xp, 1.0, u.m)
+
+        with pytest.raises(TypeError, match="Multiple namespaces"):
+            array_api_compat.array_namespace(a, a.value)
+
     def test_passthrough(self, xp):
         ns = q(xp, 1.0, u.m).__array_namespace__()
 
@@ -533,6 +540,77 @@ class TestElementwise:
         result = ns.add(q(xp, 1.0, u.m), a)
 
         assert_quantity(result, [1001.0, 2001.0], u.m, xp)
+
+
+class TestRejected:
+    def test_reject_quantity(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        with pytest.raises(TypeError, match="does not accept quantities"):
+            ns.logical_and(q(xp, 1.0, u.m), xp.asarray(True))
+
+        result = ns.logical_and(xp.asarray(True), xp.asarray(False))
+
+        assert not bool(to_numpy(result))
+
+    def test_keywords(self):
+        a = Quantity([1.0, 2.0], u.km)
+        ns = a.__array_namespace__()
+        out = np.zeros(2)
+
+        # Results written to plain arrays would lose the unit.
+        with pytest.raises(TypeError):
+            ns.add(a, a, out=out)
+
+        with pytest.raises(TypeError, match="'out'"):
+            ns.sum(a, out=out[0])
+
+        assert_array_equal(out, [0.0, 0.0])
+
+
+class TestReductionsAndShapes:
+    def test_reductions(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
+
+        assert_quantity(ns.sum(a), 10.0, u.m, xp)
+        assert_quantity(ns.mean(a, axis=0), [2.0, 3.0], u.m, xp)
+        assert_quantity(ns.max(a), 4.0, u.m, xp)
+        assert_quantity(ns.min(a, axis=1, keepdims=True), [[1.0], [3.0]], u.m, xp)
+        assert_quantity(ns.std(a), np.std([1, 2, 3, 4]), u.m, xp)
+        assert_quantity(ns.cumulative_sum(a, axis=1), [[1, 3], [3, 7]], u.m, xp)
+        assert int(to_numpy(ns.argmax(a))) == 3
+        assert bool(to_numpy(ns.all(ns.greater(a, 0))))
+
+    def test_shapes(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
+
+        assert_quantity(ns.reshape(a, (4,)), [1, 2, 3, 4], u.m, xp)
+        assert_quantity(ns.flip(a, axis=0), [[3, 4], [1, 2]], u.m, xp)
+        assert_quantity(ns.expand_dims(a, axis=0), [[[1, 2], [3, 4]]], u.m, xp)
+        assert_quantity(ns.matrix_transpose(a), [[1, 3], [2, 4]], u.m, xp)
+        assert_quantity(ns.sort(-a, axis=1), [[-2, -1], [-4, -3]], u.m, xp)
+        assert_quantity(ns.take(a, xp.asarray([1]), axis=0), [[3, 4]], u.m, xp)
+        assert_allclose(to_numpy(ns.argsort(-a, axis=1)), [[1, 0], [1, 0]])
+
+        with pytest.raises(TypeError, match="does not accept quantities"):
+            ns.take(a, q(xp, [0], u.m))
+
+    def test_plain_arrays(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        result = ns.sum(xp.asarray([1.0, 2.0]))
+
+        assert not isinstance(result, Quantity)
+        assert float(to_numpy(result)) == 3.0
+
+    def test_subclass(self, xp):
+        a = MyQuantity(xp.asarray([[1.0, 2.0]]), u.m)
+        ns = a.__array_namespace__()
+
+        assert type(ns.sum(a)) is MyQuantity
+        assert type(ns.reshape(a, (2,))) is MyQuantity
+        assert type(a.mT) is MyQuantity
 
 
 class TestEquivalencies:

@@ -25,6 +25,11 @@ from .rules import (
     ARBITRARY,
     BINARY_RULES,
     PASSTHROUGH,
+    REDUCTION_PLAIN,
+    REDUCTION_SAME,
+    REJECT_QUANTITY,
+    SHAPE_PLAIN,
+    SHAPE_SAME,
     UNARY_RULES,
     is_literal_arbitrary,
     plan,
@@ -90,6 +95,20 @@ def apply_converter(value, conv):
     return value * conv
 
 
+def _check_arguments(name, args, kwargs):
+    """Reject arguments other than the arrays acted on that are quantities.
+
+    Also reject ``out``, which some array libraries take (the result would
+    be written without any unit in such cases).
+    """
+    if "out" in kwargs:
+        raise TypeError(f"'{name}' does not support 'out' for quantities.")
+
+    for arg in (*args, *kwargs.values()):
+        if isinstance(arg, (_quantity_array.Quantity, _LegacyQuantity)):
+            raise TypeError(f"'{name}' does not accept quantities for this argument.")
+
+
 def _converted(name, args, rule=same_unit):
     """Values of ``args``, converted following ``rule``, and the result unit."""
     values, units = zip(*map(split, args))
@@ -106,9 +125,48 @@ def _elementwise(xp, name, rule):
     """f(*arrays) with converters and result unit given by ``rule``."""
     f = getattr(xp, name)
 
-    def func(*args, **kwargs):
+    # The standard defines no keyword arguments for element-wise functions.
+    def func(*args):
         values, unit = _converted(name, args, rule)
-        return _wrap(f(*values, **kwargs), unit, args)
+        return _wrap(f(*values), unit, args)
+
+    return func
+
+
+def _reject(xp, name):
+    """f(*arrays), where no argument can be a quantity (e.g. logical_and)."""
+    f = getattr(xp, name)
+
+    def func(*args, **kwargs):
+        _check_arguments(name, args, kwargs)
+        return f(*args, **kwargs)
+
+    return func
+
+
+def _same(xp, name):
+    """f(x, ...) on the value of x, with the unit of x (e.g. sum, reshape)."""
+    f = getattr(xp, name)
+
+    def func(x, /, *args, **kwargs):
+        _check_arguments(name, args, kwargs)
+        value, unit = split(x)
+
+        if not _is_quantity_unit(unit):
+            return f(x, *args, **kwargs)
+
+        return _wrap(f(value, *args, **kwargs), unit, (x,))
+
+    return func
+
+
+def _plain(xp, name):
+    """f(x, ...) on the value of x, giving a plain array (e.g. argmax, argsort)."""
+    f = getattr(xp, name)
+
+    def func(x, /, *args, **kwargs):
+        _check_arguments(name, args, kwargs)
+        return f(split(x)[0], *args, **kwargs)
 
     return func
 
@@ -125,6 +183,12 @@ def _function(xp, name):
         function = _elementwise(xp, name, UNARY_RULES[name])
     elif name in BINARY_RULES:
         function = _elementwise(xp, name, BINARY_RULES[name])
+    elif name in REJECT_QUANTITY:
+        function = _reject(xp, name)
+    elif name in REDUCTION_SAME or name in SHAPE_SAME:
+        function = _same(xp, name)
+    elif name in REDUCTION_PLAIN or name in SHAPE_PLAIN:
+        function = _plain(xp, name)
     else:
         raise AttributeError(
             f"'{name}' is not supported for quantities, since how it transforms "
@@ -145,6 +209,8 @@ class QuantityNamespace:
 
     def __init__(self, xp):
         self._xp = xp
+        # Used by array_api_compat.
+        self.__name__ = f"{type(self).__name__}({xp.__name__})"
 
     def __getattr__(self, name):
         # Only called for names without a function made earlier.
