@@ -148,6 +148,9 @@ class TestConstruction:
         ns = a.__array_namespace__()
         assert type(ns.negative(a)) is MyQuantity
         assert type(ns.multiply(2.0, a)) is MyQuantity
+        assert type(2.0 * a) is MyQuantity
+        assert type(a + a) is MyQuantity
+        assert type(u.s / a) is MyQuantity
 
 
 class TestAttributes:
@@ -194,6 +197,149 @@ class TestAttributes:
     def test_repr(self):
         assert repr(Quantity([1.0, 2.0], u.m)) == "<Quantity [1. 2.] m>"
         assert str(Quantity(1.5)) == "1.5"
+
+
+class TestSetitem:
+    def test_numpy(self):
+        a = Quantity([1.0, 2.0], u.km)
+        a[0] = Quantity(500.0, u.m)
+
+        assert_array_equal(a.value, [0.5, 2.0])
+
+        a[1] = 0
+
+        assert_array_equal(a.value, [0.5, 0.0])
+
+        with pytest.raises(u.UnitConversionError):
+            a[0] = 1.0
+
+        with pytest.raises(u.UnitConversionError):
+            a[0] = Quantity(1.0, u.s)
+
+    def test_integer_precision(self):
+        a = Quantity([1, 2], u.m, dtype=np.int64)
+        a[0] = Quantity(300.0, u.cm)
+        a[1] = Quantity(4, u.m, dtype=np.int64)
+
+        assert_array_equal(a.value, [3, 4])
+
+        with pytest.raises(TypeError, match="precision loss"):
+            a[0] = Quantity(50.0, u.cm)
+
+        assert_array_equal(a.value, [3, 4])
+
+    def test_mutability_follows_backend(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+
+        try:
+            a[0] = Quantity(500.0, u.m)
+        except (TypeError, ValueError):
+            # Back-ends with immutable arrays (e.g. JAX).
+            assert_quantity(a, [1.0, 2.0], u.km, xp)
+        else:
+            assert_quantity(a, [0.5, 2.0], u.km, xp)
+
+    def test_augmented_assignment_rebinds(self):
+        a = Quantity([1.0, 2.0], u.km)
+        b = a
+        a *= u.s
+
+        assert a.unit == u.km * u.s
+        assert b.unit is u.km
+
+    def test_not_hashable(self):
+        with pytest.raises(TypeError):
+            hash(Quantity(1.0, u.m))
+
+
+class TestOperators:
+    def test_arithmetic(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+        b = q(xp, [500.0, 1000.0], u.m)
+
+        assert_quantity(a + b, [1.5, 3.0], u.km, xp)
+        assert_quantity(b - a, [-500.0, -1000.0], u.m, xp)
+        assert_quantity(a * b, [500.0, 2000.0], u.km * u.m, xp)
+        assert_quantity(a / b, [0.002, 0.002], u.km / u.m, xp)
+        assert_quantity(a // b, [2.0, 2.0], u.dimensionless_unscaled, xp)
+        assert_quantity(a % b, [0.0, 0.0], u.km, xp)
+        assert_quantity(-a, [-1.0, -2.0], u.km, xp)
+        assert_quantity(+a, [1.0, 2.0], u.km, xp)
+        assert_quantity(abs(-a), [1.0, 2.0], u.km, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            a + q(xp, 1.0, u.s)
+
+    def test_matmul(self, xp):
+        a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
+        b = q(xp, [1.0, 1.0], u.s)
+
+        assert_quantity(a @ b, [3.0, 7.0], u.m * u.s, xp)
+
+    def test_python_numbers(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+
+        assert_quantity(2 * a, [2.0, 4.0], u.km, xp)
+        assert_quantity(a / 2, [0.5, 1.0], u.km, xp)
+        assert_quantity(1 / a, [1.0, 0.5], 1 / u.km, xp)
+        # 0, inf and nan can have any unit; other numbers are dimensionless.
+        assert_quantity(a + 0, [1.0, 2.0], u.km, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            a + 1
+
+        dimensionless = q(xp, [1.0, 2.0], u.m / u.cm)
+
+        assert_quantity(dimensionless + 1, [101.0, 201.0], u.dimensionless_unscaled, xp)
+
+    def test_plain_arrays(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+        plain = xp.asarray([2.0, 3.0])
+
+        assert_quantity(a * plain, [2.0, 6.0], u.km, xp)
+
+        if xp.__name__ != "array_api_strict":
+            # array-api-strict arrays raise.
+            assert_quantity(plain * a, [2.0, 6.0], u.km, xp)
+
+    def test_units(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+
+        assert_quantity(a * u.s, [1.0, 2.0], u.km * u.s, xp)
+        assert_quantity(a / u.s, [1.0, 2.0], u.km / u.s, xp)
+        assert_quantity(u.s * a, [1.0, 2.0], u.s * u.km, xp)
+        assert_quantity(u.s / a, [1.0, 0.5], u.s / u.km, xp)
+
+    def test_comparisons(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+        b = q(xp, [1000.0, 1000.0], u.m)
+
+        assert_array_equal(to_numpy(a == b), [True, False])
+        assert_array_equal(to_numpy(a != b), [False, True])
+        assert_array_equal(to_numpy(a < b), [False, False])
+        assert_array_equal(to_numpy(a <= b), [True, False])
+        assert_array_equal(to_numpy(a > b), [False, True])
+        assert_array_equal(to_numpy(a >= b), [True, True])
+        assert (a == q(xp, 1.0, u.s)) is False
+        assert (a != q(xp, 1.0, u.s)) is True
+
+        with pytest.raises(u.UnitConversionError):
+            a < q(xp, 1.0, u.s)  # noqa: B015
+
+    def test_unsupported_operands(self):
+        a = Quantity(1.0, u.m)
+
+        with pytest.raises(TypeError):
+            a + "1 m"
+
+        with pytest.raises(TypeError):
+            a + u.m
+
+    def test_enabled_equivalencies(self, xp):
+        with u.set_enabled_equivalencies(u.temperature()):
+            result = q(xp, 0.0, u.deg_C) + q(xp, 10.0, u.K)
+
+        assert_quantity(result, -263.15, u.deg_C, xp)
 
 
 class TestConversion:
