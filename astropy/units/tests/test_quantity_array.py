@@ -11,6 +11,8 @@ from numpy.testing import assert_allclose, assert_array_equal
 
 from astropy import units as u
 from astropy.units._quantity_array import Quantity
+from astropy.units.quantity_helper.namespace import QuantityNamespace
+from astropy.units.quantity_helper.rules import PASSTHROUGH, _cached_plan
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 
 
@@ -143,6 +145,10 @@ class TestConstruction:
         for result in (a[0, 1], a.T, a.to_device(a.device), a.to(u.cm), a.decompose()):
             assert type(result) is MyQuantity
 
+        ns = a.__array_namespace__()
+        assert type(ns.negative(a)) is MyQuantity
+        assert type(ns.multiply(2.0, a)) is MyQuantity
+
 
 class TestAttributes:
     def test_array_attributes(self, xp):
@@ -176,6 +182,8 @@ class TestAttributes:
     def test_numpy_scalars_become_0d_arrays(self):
         a = Quantity([1.0, 2.0], u.m)
         assert type(a[0].value) is np.ndarray
+        b = Quantity(1.0, u.m)
+        assert type(b.__array_namespace__().add(b, b).value) is np.ndarray
 
     def test_pickle(self):
         a = Quantity([1.0, 2.0], u.m)
@@ -256,3 +264,124 @@ class TestConversion:
     def test_numpy_ufuncs_do_not_drop_units(self):
         with pytest.raises(TypeError):
             np.add(Quantity(1.0, u.m), 1.0)
+
+
+class TestNamespace:
+    def test_namespace(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        assert isinstance(ns, QuantityNamespace)
+        assert ns is q(xp, 2.0, u.s).__array_namespace__()
+
+    def test_functions_are_kept(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        assert ns.add is ns.add
+        assert ns.add.__name__ == "add"
+
+    def test_unknown_names(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        with pytest.raises(AttributeError, match="not supported"):
+            ns.from_dlpack
+
+        with pytest.raises(AttributeError):
+            ns.no_such_function
+
+    def test_passthrough(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        for name in PASSTHROUGH:
+            if hasattr(xp, name):
+                assert getattr(ns, name) is getattr(xp, name)
+
+    def test_plain_arguments(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        result = ns.add(xp.asarray([1.0]), xp.asarray([2.0]))
+
+        assert not isinstance(result, Quantity)
+        assert_allclose(to_numpy(result), [3.0])
+
+
+class TestElementwise:
+    def test_unary(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 4.0], u.m)
+
+        assert_quantity(ns.sqrt(a), [1.0, 2.0], u.m**0.5, xp)
+        assert_quantity(ns.square(a), [1.0, 16.0], u.m**2, xp)
+        assert_quantity(ns.abs(ns.negative(a)), [1.0, 4.0], u.m, xp)
+        assert_quantity(ns.sin(q(xp, 90.0, u.deg)), 1.0, u.dimensionless_unscaled, xp)
+        assert_quantity(ns.acos(q(xp, 1.0, u.one)), 0.0, u.rad, xp)
+        assert_allclose(to_numpy(ns.isnan(a)), [False, False])
+
+        with pytest.raises(u.UnitTypeError):
+            ns.exp(a)
+
+    def test_binary(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.km)
+        b = q(xp, [3000.0, 1000.0], u.m)
+
+        assert_quantity(ns.add(a, b), [4.0, 3.0], u.km, xp)
+        assert_quantity(ns.multiply(a, b), [3000.0, 2000.0], u.km * u.m, xp)
+        assert_quantity(ns.maximum(a, b), [3.0, 2.0], u.km, xp)
+        assert_quantity(ns.hypot(a, b), [10**0.5, 5**0.5], u.km, xp)
+        assert_quantity(ns.atan2(a, b), np.arctan2([1, 2], [3, 1]), u.rad, xp)
+        assert_quantity(ns.copysign(a, ns.negative(b)), [-1.0, -2.0], u.km, xp)
+        assert_allclose(to_numpy(ns.less(a, b)), [True, False])
+
+        with pytest.raises(u.UnitConversionError):
+            ns.add(a, q(xp, 1.0, u.s))
+
+    def test_python_numbers(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.km)
+
+        assert_quantity(ns.multiply(2.0, a), [2.0, 4.0], u.km, xp)
+        # 0, inf and nan can have any unit. Other numbers are dimensionless.
+        assert_quantity(ns.add(a, 0), [1.0, 2.0], u.km, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.add(a, 1.0)
+
+        dimensionless = q(xp, [1.0, 2.0], u.m / u.cm)
+        result = ns.add(dimensionless, 1.0)
+
+        assert_quantity(result, [101.0, 201.0], u.dimensionless_unscaled, xp)
+
+    def test_float32_is_kept(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = Quantity(xp.asarray([1.0, 2.0], dtype=xp.float32), u.km)
+        b = Quantity(xp.asarray([1.0, 2.0], dtype=xp.float32), u.m)
+
+        assert ns.add(a, b).dtype == xp.float32
+
+    def test_integer_values_are_scaled_as_float(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = Quantity(xp.asarray([1, 2]), u.km, dtype=xp.int64)
+        result = ns.add(q(xp, 1.0, u.m), a)
+
+        assert_quantity(result, [1001.0, 2001.0], u.m, xp)
+
+
+class TestEquivalencies:
+    def test_enabled_equivalencies(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        with u.set_enabled_equivalencies(u.temperature()):
+            result = ns.add(q(xp, 0.0, u.deg_C), q(xp, 10.0, u.K))
+
+        assert_quantity(result, -263.15, u.deg_C, xp)
+
+    def test_results_are_not_cached(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        _cached_plan.cache_clear()
+
+        with u.set_enabled_equivalencies(u.dimensionless_angles()):
+            assert_quantity(ns.exp(q(xp, 0.0, u.rad)), 1.0, u.one, xp)
+
+        assert _cached_plan.cache_info().currsize == 0
+
+        with pytest.raises(u.UnitTypeError):
+            ns.exp(q(xp, 0.0, u.rad))
