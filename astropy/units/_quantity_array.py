@@ -11,6 +11,7 @@ import numpy as np
 from astropy.units.core import CompositeUnit, Unit, UnitBase, dimensionless_unscaled
 from astropy.units.errors import UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
+from astropy.units.quantity import _upcast_int_to_float
 from astropy.units.quantity_helper import namespace as _namespace
 from astropy.units.quantity_helper.rules import converter
 from astropy.utils.compat.array_api import array_namespace, default_floating_dtype
@@ -76,8 +77,11 @@ class Quantity:
     unit : unit-like, optional
         The unit; dimensionless if not given (and ``value`` is not a quantity).
     dtype : dtype, optional
-        The data type. If not given, integer and boolean values are
-        converted to the default floating point type of the array library.
+        The data type. If not given, integer values are converted to the
+        default floating point type of the array library, as set by the
+        ``quantity_convert_int_to_float`` configuration item. If `None`, the
+        data type of the value is kept. If `numpy.inexact`, integer values are
+        converted whatever the configuration says.
     copy : bool, optional
         Whether to copy ``value``; by default it is copied.
     device : device, optional
@@ -98,10 +102,10 @@ class Quantity:
     # Quantities are mutable, and == gives an array.
     __hash__ = None
 
-    def __init__(self, value, unit=None, dtype=None, copy=True, *, device=None):
+    def __init__(self, value, unit=None, dtype=np._NoValue, copy=True, *, device=None):
         if isinstance(value, Quantity):
             if unit is not None:
-                value = value.to(unit)
+                value = value.to(unit, copy=False)
 
             value, unit = value._value, value._unit
         elif isinstance(value, _LegacyQuantity):
@@ -110,10 +114,17 @@ class Quantity:
         else:
             unit = dimensionless_unscaled if unit is None else _as_unit(unit)
 
+        upcast = dtype is np._NoValue or dtype is np.inexact
         xp = array_namespace(value)
-        value = xp.asarray(value, dtype=dtype, device=device, copy=copy)
+        value = xp.asarray(
+            value, dtype=None if upcast else dtype, device=device, copy=copy
+        )
 
-        if dtype is None and xp.isdtype(value.dtype, ("integral", "bool")):
+        if (
+            upcast
+            and xp.isdtype(value.dtype, "integral")
+            and _upcast_int_to_float(dtype)
+        ):
             device = array_api_compat.device(value)
             value = xp.astype(value, default_floating_dtype(xp, device))
 
@@ -324,8 +335,9 @@ class Quantity:
         )
 
     def __array__(self, dtype=None, copy=None):
+        # Only for units that are dimensionless without any equivalencies.
         try:
-            value = self.to_value(dimensionless_unscaled)
+            value = self._to_value(dimensionless_unscaled, None)
         except UnitsError:
             raise TypeError(
                 f"a quantity with unit '{self._unit}' cannot be converted to a "
@@ -335,7 +347,7 @@ class Quantity:
 
         return np.asarray(value, dtype=dtype, copy=copy)
 
-    def to(self, unit, equivalencies=[]):
+    def to(self, unit, equivalencies=[], copy=True):
         """Return a new quantity converted to ``unit``.
 
         Parameters
@@ -345,10 +357,17 @@ class Quantity:
         equivalencies : list of tuple, optional
             Equivalencies to use if a direct conversion is not possible. If
             `None`, no equivalencies are used, not even enabled ones.
+        copy : bool, optional
+            If `True` (default), the value is copied. Otherwise, a copy is
+            only made if necessary.
         """
         unit = _as_unit(unit)
+        value = self._to_value(unit, equivalencies)
 
-        return self._new(self._to_value(unit, equivalencies), unit)
+        if copy and value is self._value:
+            value = array_namespace(value).asarray(value, copy=True)
+
+        return self._new(value, unit)
 
     def to_value(self, unit=None, equivalencies=[]):
         """The value in ``unit``, as an array of the underlying array library.
@@ -382,7 +401,7 @@ class Quantity:
         except (TypeError, ValueError):
             return NotImplemented
 
-        return self.to(unit)
+        return self.to(unit, copy=False)
 
     def decompose(self, bases=()):
         """Return a quantity in terms of irreducible units.
