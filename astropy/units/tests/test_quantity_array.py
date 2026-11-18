@@ -105,6 +105,18 @@ class TestConstruction:
     def test_unit_string(self):
         assert Quantity(1.0, "km/s").unit == u.km / u.s
 
+    def test_from_quantity(self):
+        km = Quantity([1.0], u.km)
+
+        assert Quantity(km).unit is u.km
+        assert_array_equal(Quantity(km, u.m).value, [1000.0])
+
+    def test_from_legacy_quantity(self):
+        result = Quantity(u.Quantity([1.0, 2.0], u.km), u.m)
+
+        assert type(result.value) is np.ndarray
+        assert_array_equal(result.value, [1000.0, 2000.0])
+
     def test_copy(self):
         value = np.array([1.0, 2.0])
 
@@ -128,7 +140,7 @@ class TestConstruction:
     def test_subclass(self, xp):
         a = MyQuantity(xp.asarray([[1.0, 2.0]]), u.m)
 
-        for result in (a[0, 1], a.T, a.to_device(a.device)):
+        for result in (a[0, 1], a.T, a.to_device(a.device), a.to(u.cm), a.decompose()):
             assert type(result) is MyQuantity
 
 
@@ -174,3 +186,73 @@ class TestAttributes:
     def test_repr(self):
         assert repr(Quantity([1.0, 2.0], u.m)) == "<Quantity [1. 2.] m>"
         assert str(Quantity(1.5)) == "1.5"
+
+
+class TestConversion:
+    def test_to(self, xp):
+        a = q(xp, [1.0, 2.0], u.km)
+
+        assert_quantity(a.to(u.m), [1000.0, 2000.0], u.m, xp)
+        assert_quantity(a << u.m, [1000.0, 2000.0], u.m, xp)
+        assert_allclose(to_numpy(a.to_value(u.m)), [1000.0, 2000.0])
+        assert a.to_value() is a.value
+        assert a.to(u.km).value is a.value
+
+        with pytest.raises(u.UnitConversionError):
+            a.to(u.s)
+
+    def test_to_keeps_dtype(self, xp):
+        a = Quantity(xp.asarray([1.0, 2.0], dtype=xp.float32), u.km)
+
+        assert a.to(u.m).dtype == xp.float32
+
+    def test_integer_values_are_scaled_as_float(self, xp):
+        a = Quantity(xp.asarray([1, 2]), u.km, dtype=xp.int64)
+        result = a.to(u.m)
+
+        assert xp.isdtype(result.dtype, "real floating")
+        assert_quantity(result, [1000.0, 2000.0], u.m, xp)
+
+    def test_to_with_equivalencies(self, xp):
+        a = q(xp, [1.0, 2.0], u.m)
+        result = a.to(u.Hz, equivalencies=u.spectral())
+
+        assert_quantity(result, 299792458.0 / to_numpy(a), u.Hz, xp)
+
+        with u.set_enabled_equivalencies(u.spectral()):
+            assert_quantity(a.to(u.Hz), 299792458.0 / to_numpy(a), u.Hz, xp)
+
+            with pytest.raises(u.UnitConversionError):
+                a.to(u.Hz, equivalencies=None)
+
+    def test_decompose(self, xp):
+        a = q(xp, [1.0, 2.0], u.km / u.ms)
+        result = a.decompose()
+
+        assert result.unit == u.m / u.s
+        assert_allclose(to_numpy(result), [1e6, 2e6])
+
+    def test_python_scalars(self):
+        assert float(Quantity(3.0, u.m / u.cm)) == 300.0
+        assert int(Quantity(3.0)) == 3
+        assert complex(Quantity(3.0)) == 3 + 0j
+        assert [10, 20, 30][Quantity(1, dtype=np.int64)] == 20
+
+        with pytest.raises(TypeError, match="dimensionless"):
+            float(Quantity(3.0, u.m))
+
+        with pytest.raises(TypeError, match="index"):
+            [1, 2][Quantity(1.0, u.m)]
+
+        with pytest.raises(ValueError, match="truthiness"):
+            bool(Quantity(1.0))
+
+    def test_numpy_conversion(self):
+        assert_array_equal(np.asarray(Quantity([1.0, 2.0], u.m / u.cm)), [100, 200])
+
+        with pytest.raises(TypeError, match="drop the unit"):
+            np.asarray(Quantity([1.0, 2.0], u.m))
+
+    def test_numpy_ufuncs_do_not_drop_units(self):
+        with pytest.raises(TypeError):
+            np.add(Quantity(1.0, u.m), 1.0)
