@@ -13,6 +13,8 @@ library, including under tracing.
 from __future__ import annotations
 
 import functools
+import math
+import numbers
 
 import array_api_compat
 import numpy as np
@@ -31,9 +33,13 @@ from .rules import (
     SHAPE_PLAIN,
     SHAPE_SAME,
     UNARY_RULES,
+    array_power,
+    dimensionless_to_dimensionless,
     is_literal_arbitrary,
     plan,
+    prod_rule,
     same_unit,
+    static_power,
 )
 
 __all__ = ["namespace_for", "units_namespace"]
@@ -204,7 +210,9 @@ def _function(xp, name):
 class QuantityNamespace:
     """An Array API namespace for quantities, wrapping that of their values.
 
-    Functions are made from the rule tables when they are first used, and kept.
+    Functions whose unit handling depends on more than the units of their
+    arguments are methods. All others are made from the rule tables when
+    they are first used, and kept.
     """
 
     def __init__(self, xp):
@@ -224,6 +232,111 @@ class QuantityNamespace:
 
     def __repr__(self):
         return f"<{type(self).__name__} for {self._xp.__name__}>"
+
+    def pow(self, x1, x2, /):
+        """x1 ** x2; for an array exponent, x1 must be dimensionless."""
+        v1, u1 = split(x1)
+
+        if (
+            _is_quantity_unit(u1)
+            and isinstance(x2, numbers.Real)
+            and not isinstance(x2, bool)
+        ):
+            # A Python exponent, so the result unit is known.
+            (_,), unit = plan(static_power, (u1,), (("exponent", x2),))
+            exponent = int(x2) if isinstance(x2, numbers.Integral) else float(x2)
+
+            return _wrap(self._xp.pow(v1, exponent), unit, (x1,))
+
+        values, unit = _converted("pow", (x1, x2), array_power)
+
+        return _wrap(self._xp.pow(*values), unit, (x1, x2))
+
+    def clip(self, x, /, min=None, max=None):
+        """x clipped to min and max, which are converted to the unit of x."""
+        bounds = [bound for bound in (min, max) if bound is not None]
+        values, unit = _converted("clip", (x, *bounds))
+        bounds = iter(values[1:])
+        min = None if min is None else next(bounds)
+        max = None if max is None else next(bounds)
+
+        return _wrap(self._xp.clip(values[0], min=min, max=max), unit, (x,))
+
+    def where(self, condition, x1, x2, /):
+        """Elements of x1 or x2, converted to a common unit.
+
+        The condition is a plain boolean array.
+        """
+        _check_arguments("where", (condition,), {})
+        (v1, v2), unit = _converted("where", (x1, x2))
+
+        return _wrap(self._xp.where(condition, v1, v2), unit, (x1, x2))
+
+    def prod(self, x, /, *, axis=None, **kwargs):
+        """Product, with unit to the power of the number of elements reduced over.
+
+        If that number is not known (e.g. for lazy arrays), x has to be
+        dimensionless.
+        """
+        _check_arguments("prod", (), kwargs)
+        value, unit = split(x)
+
+        if not _is_quantity_unit(unit):
+            return self._xp.prod(x, axis=axis, **kwargs)
+
+        shape = value.shape
+
+        if axis is None:
+            axes = range(len(shape))
+        else:
+            axes = (axis,) if isinstance(axis, int) else axis
+
+        sizes = [shape[i] for i in axes]
+        # Unknown sizes are None, or nan for dask.
+        known = all(isinstance(size, int) for size in sizes)
+        n = math.prod(sizes) if known else None
+        (conv,), unit = plan(prod_rule, (unit,), (("n", n),))
+        result = self._xp.prod(apply_converter(value, conv), axis=axis, **kwargs)
+
+        return _wrap(result, unit, (x,))
+
+    def cumulative_prod(self, x, /, **kwargs):
+        """Cumulative product, which is only possible for dimensionless x."""
+        _check_arguments("cumulative_prod", (), kwargs)
+        (value,), unit = _converted(
+            "cumulative_prod", (x,), dimensionless_to_dimensionless
+        )
+
+        return _wrap(self._xp.cumulative_prod(value, **kwargs), unit, (x,))
+
+    def var(self, x, /, **kwargs):
+        """Variance, with the unit of x squared."""
+        _check_arguments("var", (), kwargs)
+        value, unit = split(x)
+
+        if not _is_quantity_unit(unit):
+            return self._xp.var(x, **kwargs)
+
+        (_,), unit = plan(static_power, (unit,), (("exponent", 2),))
+
+        return _wrap(self._xp.var(value, **kwargs), unit, (x,))
+
+    def diff(self, x, /, *, axis=-1, n=1, prepend=None, append=None):
+        """Differences, with prepend and append converted to the unit of x."""
+        extra = [array for array in (prepend, append) if array is not None]
+        values, unit = _converted("diff", (x, *extra))
+        extra = iter(values[1:])
+        kwargs = {}
+
+        if prepend is not None:
+            kwargs["prepend"] = next(extra)
+
+        if append is not None:
+            kwargs["append"] = next(extra)
+
+        result = self._xp.diff(values[0], axis=axis, n=n, **kwargs)
+
+        return _wrap(result, unit, (x,))
 
 
 @functools.cache

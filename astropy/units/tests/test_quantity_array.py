@@ -278,6 +278,7 @@ class TestOperators:
         assert_quantity(-a, [-1.0, -2.0], u.km, xp)
         assert_quantity(+a, [1.0, 2.0], u.km, xp)
         assert_quantity(abs(-a), [1.0, 2.0], u.km, xp)
+        assert_quantity(a**2, [1.0, 4.0], u.km**2, xp)
 
         with pytest.raises(u.UnitConversionError):
             a + q(xp, 1.0, u.s)
@@ -611,6 +612,97 @@ class TestReductionsAndShapes:
         assert type(ns.sum(a)) is MyQuantity
         assert type(ns.reshape(a, (2,))) is MyQuantity
         assert type(a.mT) is MyQuantity
+
+
+class TestUnitFromArguments:
+    def test_pow(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.m)
+
+        assert_quantity(ns.pow(a, 3), [1.0, 8.0], u.m**3, xp)
+        assert_quantity(ns.pow(a, np.float64(0.5)), [1.0, 2**0.5], u.m**0.5, xp)
+        assert_quantity(a**-1, [1.0, 0.5], 1 / u.m, xp)
+
+        dimensionless = q(xp, [1.0, 2.0], u.m / u.cm)
+        result = ns.pow(dimensionless, xp.asarray([1.0, 2.0]))
+
+        assert_quantity(result, [100.0, 40000.0], u.one, xp)
+        assert_quantity(2.0**dimensionless, [2.0**100, 2.0**200], u.one, xp)
+
+        with pytest.raises(u.UnitTypeError, match="Python number"):
+            ns.pow(a, xp.asarray([1.0, 2.0]))
+
+    def test_prod(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
+
+        assert_quantity(ns.prod(a), 24.0, u.m**4, xp)
+        assert_quantity(ns.prod(a, axis=1), [2.0, 12.0], u.m**2, xp)
+        assert_quantity(ns.prod(a, axis=(0, 1)), 24.0, u.m**4, xp)
+
+        dimensionless = q(xp, [1.0, 2.0], u.m / u.cm)
+
+        assert_quantity(ns.cumulative_prod(dimensionless), [100, 20000], u.one, xp)
+
+        with pytest.raises(u.UnitTypeError):
+            ns.cumulative_prod(a)
+
+    @pytest.mark.parametrize("size", [None, np.nan])
+    def test_prod_unknown_size(self, size):
+        class Lazy:
+            # Just enough of a lazy array with an unknown size for prod.
+            shape = (size,)
+
+        ns = Quantity(1.0, u.m).__array_namespace__()
+
+        with pytest.raises(u.UnitsError, match="not known"):
+            ns.prod(Quantity._new(Lazy(), u.m))
+
+    def test_var(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0, 3.0, 4.0], u.m)
+
+        assert_quantity(ns.var(a), np.var([1, 2, 3, 4]), u.m**2, xp)
+        assert_quantity(
+            ns.var(a, correction=1), np.var([1, 2, 3, 4], ddof=1), u.m**2, xp
+        )
+
+    def test_diff(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0, 4.0], u.m)
+
+        assert_quantity(ns.diff(a), [1.0, 2.0], u.m, xp)
+
+        result = ns.diff(a, prepend=q(xp, [0.0], u.cm), append=q(xp, [0.005], u.km))
+
+        assert_quantity(result, [1.0, 1.0, 2.0, 1.0], u.m, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.diff(a, append=q(xp, [1.0], u.s))
+
+    def test_clip(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0, 3.0], u.m)
+
+        assert_quantity(ns.clip(a, min=q(xp, 150.0, u.cm)), [1.5, 2.0, 3.0], u.m, xp)
+        assert_quantity(ns.clip(a, max=q(xp, 2.0, u.m)), [1.0, 2.0, 2.0], u.m, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.clip(a, min=1.0)
+
+    def test_where(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.m)
+        condition = xp.asarray([True, False])
+
+        assert_quantity(ns.where(condition, a, q(xp, 0.5, u.km)), [1.0, 500.0], u.m, xp)
+        assert_quantity(ns.where(condition, a, 0.0), [1.0, 0.0], u.m, xp)
+
+        with pytest.raises(TypeError, match="does not accept quantities"):
+            ns.where(q(xp, [1.0, 0.0], u.one), a, a)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.where(condition, a, q(xp, 1.0, u.s))
 
 
 class TestEquivalencies:
