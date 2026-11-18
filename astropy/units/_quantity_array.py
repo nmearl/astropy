@@ -240,6 +240,8 @@ class Quantity:
     __rmod__ = _binary_op("remainder", reflected=True)
     __matmul__ = _binary_op("matmul")
     __rmatmul__ = _binary_op("matmul", reflected=True)
+    __pow__ = _binary_op("pow")
+    __rpow__ = _binary_op("pow", reflected=True)
     __lt__ = _binary_op("less")
     __le__ = _binary_op("less_equal")
     __gt__ = _binary_op("greater")
