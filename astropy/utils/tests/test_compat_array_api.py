@@ -5,7 +5,7 @@ import pytest
 from array_api_compat import numpy as numpy_namespace
 
 from astropy import units as u
-from astropy.utils.compat.array_api import array_namespace
+from astropy.utils.compat.array_api import array_namespace, default_floating_dtype
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 
 
@@ -36,3 +36,22 @@ def test_array_api_strict():
 
     with pytest.raises(TypeError):
         array_namespace(x, np.ones(2))
+
+
+def test_default_floating_dtype():
+    assert default_floating_dtype(numpy_namespace) == np.float64
+
+
+@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
+def test_default_floating_dtype_array_api_strict():
+    import array_api_strict as xp
+
+    assert default_floating_dtype(xp) == xp.float64
+    assert default_floating_dtype(xp, device=xp.asarray(1.0).device) == xp.float64
+
+
+def test_default_floating_dtype_without_info():
+    class Namespace:
+        float64 = np.float64
+
+    assert default_floating_dtype(Namespace()) is np.float64
