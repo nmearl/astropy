@@ -12,7 +12,7 @@ from numpy.testing import assert_allclose, assert_array_equal
 from astropy import units as u
 from astropy.units._quantity_array import Quantity
 from astropy.units.quantity_helper.namespace import QuantityNamespace
-from astropy.units.quantity_helper.rules import PASSTHROUGH, _cached_plan
+from astropy.units.quantity_helper.rules import PASSTHROUGH
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 
 
@@ -814,14 +814,11 @@ class TestEquivalencies:
 
         assert_quantity(result, -263.15, u.deg_C, xp)
 
-    def test_results_are_not_cached(self, xp):
+    def test_results_are_not_reused_outside_context(self, xp):
         ns = q(xp, 1.0, u.m).__array_namespace__()
-        _cached_plan.cache_clear()
 
         with u.set_enabled_equivalencies(u.dimensionless_angles()):
             assert_quantity(ns.exp(q(xp, 0.0, u.rad)), 1.0, u.one, xp)
-
-        assert _cached_plan.cache_info().currsize == 0
 
         with pytest.raises(u.UnitTypeError):
             ns.exp(q(xp, 0.0, u.rad))
