@@ -1,14 +1,5 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
-"""Array API namespaces for quantities.
-
-``units_namespace(xp)`` wraps an Array API namespace ``xp`` (e.g. numpy, JAX,
-array-api-strict) in a namespace whose functions accept and return quantities.
-Each function splits its arguments into values and units, gets the converters
-and the result unit from the rules for the units only, calls the function of
-``xp`` on the converted values, and attaches the result unit. Since values are
-never inspected for the unit handling, the same code works for any array
-library, including under tracing.
-"""
+"""Array API namespaces for quantities."""
 
 from __future__ import annotations
 
@@ -67,9 +58,9 @@ def _is_quantity_unit(unit):
     return unit is not None and unit is not ARBITRARY
 
 
-def _wrap(result, unit, args):
+def _wrap(result, unit, args=()):
     """Attach ``unit`` to ``result``, as an instance of the first quantity's type."""
-    if unit is None:
+    if not _is_quantity_unit(unit):
         return result
 
     for arg in args:
@@ -131,9 +122,8 @@ def _converted(name, args, rule=same_unit):
     return list(map(apply_converter, values, converters)), unit
 
 
-def _elementwise(xp, name, rule):
+def _elementwise(f, name, rule):
     """f(*arrays) with converters and result unit given by ``rule``."""
-    f = getattr(xp, name)
 
     # The standard defines no keyword arguments for element-wise functions.
     def func(*args):
@@ -143,9 +133,8 @@ def _elementwise(xp, name, rule):
     return func
 
 
-def _reject(xp, name):
+def _reject(f, name):
     """f(*arrays), where no argument can be a quantity (e.g. logical_and)."""
-    f = getattr(xp, name)
 
     def func(*args, **kwargs):
         _check_arguments(name, args, kwargs)
@@ -154,25 +143,20 @@ def _reject(xp, name):
     return func
 
 
-def _same(xp, name):
+def _same(f, name):
     """f(x, ...) on the value of x, with the unit of x (e.g. sum, reshape)."""
-    f = getattr(xp, name)
 
     def func(x, /, *args, **kwargs):
         _check_arguments(name, args, kwargs)
         value, unit = split(x)
-
-        if not _is_quantity_unit(unit):
-            return f(x, *args, **kwargs)
 
         return _wrap(f(value, *args, **kwargs), unit, (x,))
 
     return func
 
 
-def _plain(xp, name):
+def _plain(f, name):
     """f(x, ...) on the value of x, giving a plain array (e.g. argmax, argsort)."""
-    f = getattr(xp, name)
 
     def func(x, /, *args, **kwargs):
         _check_arguments(name, args, kwargs)
@@ -183,22 +167,22 @@ def _plain(xp, name):
 
 def _function(xp, name):
     """The units-aware version of ``xp.<name>``, made from the rule tables."""
-    if name in PASSTHROUGH:
-        return getattr(xp, name)
-
     # Only make functions that the wrapped namespace has.
-    getattr(xp, name)
+    f = getattr(xp, name)
+
+    if name in PASSTHROUGH:
+        return f
 
     if name in UNARY_RULES:
-        function = _elementwise(xp, name, UNARY_RULES[name])
+        function = _elementwise(f, name, UNARY_RULES[name])
     elif name in BINARY_RULES:
-        function = _elementwise(xp, name, BINARY_RULES[name])
+        function = _elementwise(f, name, BINARY_RULES[name])
     elif name in REJECT_QUANTITY:
-        function = _reject(xp, name)
+        function = _reject(f, name)
     elif name in REDUCTION_SAME or name in SHAPE_SAME:
-        function = _same(xp, name)
+        function = _same(f, name)
     elif name in REDUCTION_PLAIN or name in SHAPE_PLAIN:
-        function = _plain(xp, name)
+        function = _plain(f, name)
     else:
         raise AttributeError(
             f"'{name}' is not supported for quantities, since how it transforms "
@@ -215,61 +199,40 @@ def _values(arrays):
     return [split(array)[0] for array in arrays]
 
 
-def _with_own_unit(result, array):
-    """``result`` with the unit of ``array``, as an instance of its class."""
-    unit = split(array)[1]
-
-    if not _is_quantity_unit(unit):
-        return result
-
-    if isinstance(array, _quantity_array.Quantity):
-        return array._new(result, unit)
-
-    return _quantity_array.Quantity._new(result, unit)
-
-
 def _each_own_unit(results, arrays):
     """Results that each have the unit and class of the corresponding input."""
-    return type(results)(map(_with_own_unit, results, arrays))
+    return type(results)(
+        _wrap(result, split(array)[1], (array,))
+        for result, array in zip(results, arrays)
+    )
 
 
 def _with_values_unit(result, x):
     """A named tuple from unique_counts, etc, with ``values`` in the unit of x."""
-    unit = split(x)[1]
+    values = _wrap(result.values, split(x)[1], (x,))
 
-    if not _is_quantity_unit(unit):
-        return result
-
-    return result._replace(values=_wrap(result.values, unit, (x,)))
+    return result._replace(values=values)
 
 
-def _created(value, unit):
-    """A quantity in ``unit``, or the plain array if no unit is given."""
-    return value if unit is None else _quantity_array.Quantity._new(value, unit)
+def _optional_unit(unit):
+    """``unit`` as a unit, or `None` if not given."""
+    return None if unit is None else _quantity_array._as_unit(unit)
 
 
-def _like_unit(unit, x_unit, fill_unit=None):
-    """The unit for a ``*_like`` function."""
+def _fill(name, fill_value, unit, default_unit=None):
+    """The value of fill_value and the unit of the result."""
+    value, fill_unit = split(fill_value)
+
     if unit is not None:
-        return _quantity_array._as_unit(unit)
+        unit = _quantity_array._as_unit(unit)
 
-    for other in (x_unit, fill_unit):
-        if _is_quantity_unit(other):
-            return other
+        if not _is_quantity_unit(fill_unit):
+            return value, unit
+    else:
+        candidates = (default_unit, fill_unit)
+        unit = next((u for u in candidates if _is_quantity_unit(u)), None)
 
-    return None
-
-
-def _fill_value(name, fill_value, fill_unit, unit, explicit):
-    """fill_value converted to ``unit``.
-
-    A plain fill value is taken to be in ``unit`` if that is given explicitly;
-    otherwise, it is treated as for any other function.
-    """
-    if explicit and not _is_quantity_unit(fill_unit):
-        return fill_value
-
-    return apply_converter(fill_value, converter(fill_unit, unit, name))
+    return apply_converter(value, converter(fill_unit, unit, name)), unit
 
 
 def _full(xp, shape, fill_value, *, dtype=None, device=None):
@@ -313,9 +276,8 @@ def _range_values(name, args, unit):
     That unit is ``unit`` if given, else that of the first quantity. If no
     argument is a quantity, the values are taken to be in ``unit``.
     """
-    unit = None if unit is None else _quantity_array._as_unit(unit)
-    present = [arg for arg in args if arg is not None]
-    values, units = zip(*map(split, present))
+    unit = _optional_unit(unit)
+    values, units = zip(*map(split, args))
     quantity_units = [unit for unit in units if _is_quantity_unit(unit)]
 
     if not quantity_units:
@@ -324,12 +286,19 @@ def _range_values(name, args, unit):
     if unit is None:
         unit = quantity_units[0]
 
-    converted = iter(
-        _python_scalar(apply_converter(value, converter(arg_unit, unit, name)))
+    return [
+        (
+            None
+            if value is None
+            else _python_scalar(apply_converter(value, converter(arg_unit, unit, name)))
+        )
         for value, arg_unit in zip(values, units)
-    )
+    ], unit
 
-    return [None if arg is None else next(converted) for arg in args], unit
+
+def _given(**kwargs):
+    """The keyword arguments that are not `None`."""
+    return {key: value for key, value in kwargs.items() if value is not None}
 
 
 class QuantityNamespace:
@@ -379,13 +348,11 @@ class QuantityNamespace:
 
     def clip(self, x, /, min=None, max=None):
         """x clipped to min and max, which are converted to the unit of x."""
-        bounds = [bound for bound in (min, max) if bound is not None]
-        values, unit = _converted("clip", (x, *bounds))
-        bounds = iter(values[1:])
-        min = None if min is None else next(bounds)
-        max = None if max is None else next(bounds)
+        bounds = _given(min=min, max=max)
+        (value, *values), unit = _converted("clip", (x, *bounds.values()))
+        result = self._xp.clip(value, **dict(zip(bounds, values)))
 
-        return _wrap(self._xp.clip(values[0], min=min, max=max), unit, (x,))
+        return _wrap(result, unit, (x,))
 
     def where(self, condition, x1, x2, /):
         """Elements of x1 or x2, converted to a common unit.
@@ -439,27 +406,16 @@ class QuantityNamespace:
         _check_arguments("var", (), kwargs)
         value, unit = split(x)
 
-        if not _is_quantity_unit(unit):
-            return self._xp.var(x, **kwargs)
-
-        (_,), unit = plan(static_power, (unit,), (("exponent", 2),))
+        if _is_quantity_unit(unit):
+            _, unit = plan(static_power, (unit,), (("exponent", 2),))
 
         return _wrap(self._xp.var(value, **kwargs), unit, (x,))
 
     def diff(self, x, /, *, axis=-1, n=1, prepend=None, append=None):
         """Differences, with prepend and append converted to the unit of x."""
-        extra = [array for array in (prepend, append) if array is not None]
-        values, unit = _converted("diff", (x, *extra))
-        extra = iter(values[1:])
-        kwargs = {}
-
-        if prepend is not None:
-            kwargs["prepend"] = next(extra)
-
-        if append is not None:
-            kwargs["append"] = next(extra)
-
-        result = self._xp.diff(values[0], axis=axis, n=n, **kwargs)
+        extra = _given(prepend=prepend, append=append)
+        (value, *values), unit = _converted("diff", (x, *extra.values()))
+        result = self._xp.diff(value, axis=axis, n=n, **dict(zip(extra, values)))
 
         return _wrap(result, unit, (x,))
 
@@ -494,9 +450,6 @@ class QuantityNamespace:
         """Arrays split along an axis, each with the unit of x."""
         value, unit = split(x)
         results = self._xp.unstack(value, axis=axis)
-
-        if not _is_quantity_unit(unit):
-            return results
 
         return tuple(_wrap(result, unit, (x,)) for result in results)
 
@@ -560,15 +513,15 @@ class QuantityNamespace:
         ``obj``, as in the standard. Without ``unit``, plain values give a
         plain array (e.g. a boolean mask).
         """
+        unit = _optional_unit(unit)
+
         if isinstance(obj, (_quantity_array.Quantity, _LegacyQuantity)):
-            unit = obj.unit if unit is None else _quantity_array._as_unit(unit)
+            unit = obj.unit if unit is None else unit
             obj = obj.to_value(unit)
-        elif unit is not None:
-            unit = _quantity_array._as_unit(unit)
 
         value = self._xp.asarray(obj, dtype=dtype, device=device, copy=copy)
 
-        return _created(value, unit)
+        return _wrap(value, unit)
 
     def arange(self, start, /, stop=None, step=None, *, unit=None, **kwargs):
         """Evenly spaced values; quantities are converted to a common unit.
@@ -578,90 +531,90 @@ class QuantityNamespace:
         (start, stop, step), unit = _range_values("arange", (start, stop, step), unit)
         step = 1 if step is None else step
 
-        return _created(self._xp.arange(start, stop, step, **kwargs), unit)
+        return _wrap(self._xp.arange(start, stop, step, **kwargs), unit)
 
     def linspace(self, start, stop, /, num, *, unit=None, **kwargs):
         """Evenly spaced values; quantities are converted to a common unit."""
         (start, stop), unit = _range_values("linspace", (start, stop), unit)
 
-        return _created(self._xp.linspace(start, stop, num, **kwargs), unit)
+        return _wrap(self._xp.linspace(start, stop, num, **kwargs), unit)
 
     def empty(self, shape, *, unit=None, dtype=None, device=None):
         """An uninitialized array, which is a quantity if ``unit`` is given."""
         value = self._xp.empty(shape, dtype=dtype, device=device)
 
-        return _created(value, _like_unit(unit, None))
+        return _wrap(value, _optional_unit(unit))
 
     def zeros(self, shape, *, unit=None, dtype=None, device=None):
         """An array of zeros, which is a quantity if ``unit`` is given."""
         value = self._xp.zeros(shape, dtype=dtype, device=device)
 
-        return _created(value, _like_unit(unit, None))
+        return _wrap(value, _optional_unit(unit))
 
     def ones(self, shape, *, unit=None, dtype=None, device=None):
         """An array of ones, which is a quantity if ``unit`` is given."""
         value = self._xp.ones(shape, dtype=dtype, device=device)
 
-        return _created(value, _like_unit(unit, None))
+        return _wrap(value, _optional_unit(unit))
 
     def eye(self, n_rows, n_cols=None, /, *, k=0, unit=None, dtype=None, device=None):
         """Ones on a diagonal; a quantity if ``unit`` is given."""
         value = self._xp.eye(n_rows, n_cols, k=k, dtype=dtype, device=device)
 
-        return _created(value, _like_unit(unit, None))
+        return _wrap(value, _optional_unit(unit))
 
     def full(self, shape, fill_value, *, unit=None, dtype=None, device=None):
-        """An array filled with fill_value, in ``unit`` or that of fill_value."""
-        value, fill_unit = split(fill_value)
-        explicit = unit is not None
-        unit = _like_unit(unit, fill_unit)
-        value = _fill_value("full", value, fill_unit, unit, explicit)
-        value = _full(self._xp, shape, value, dtype=dtype, device=device)
+        """An array filled with fill_value, in ``unit`` or that of fill_value.
 
-        return _created(value, unit)
+        A plain fill_value is taken to be in ``unit``.
+        """
+        value, unit = _fill("full", fill_value, unit)
+        result = _full(self._xp, shape, value, dtype=dtype, device=device)
+
+        return _wrap(result, unit)
 
     def empty_like(self, x, /, *, unit=None, dtype=None, device=None):
         """An uninitialized array like x, in ``unit`` or that of x."""
         value, x_unit = split(x)
         result = self._xp.empty_like(value, dtype=dtype, device=device)
 
-        return _wrap(result, _like_unit(unit, x_unit), (x,))
+        unit = x_unit if unit is None else _quantity_array._as_unit(unit)
+
+        return _wrap(result, unit, (x,))
 
     def zeros_like(self, x, /, *, unit=None, dtype=None, device=None):
         """An array of zeros like x, in ``unit`` or that of x."""
         value, x_unit = split(x)
         result = self._xp.zeros_like(value, dtype=dtype, device=device)
 
-        return _wrap(result, _like_unit(unit, x_unit), (x,))
+        unit = x_unit if unit is None else _quantity_array._as_unit(unit)
+
+        return _wrap(result, unit, (x,))
 
     def ones_like(self, x, /, *, unit=None, dtype=None, device=None):
         """An array of ones like x, in ``unit`` or that of x."""
         value, x_unit = split(x)
         result = self._xp.ones_like(value, dtype=dtype, device=device)
 
-        return _wrap(result, _like_unit(unit, x_unit), (x,))
+        unit = x_unit if unit is None else _quantity_array._as_unit(unit)
+
+        return _wrap(result, unit, (x,))
 
     def full_like(self, x, /, fill_value, *, unit=None, dtype=None, device=None):
         """An array like x filled with fill_value.
 
         The unit is ``unit`` if given, else that of x, else that of fill_value.
+        A plain fill_value is taken to be in ``unit``.
         """
         value, x_unit = split(x)
-        fill_value, fill_unit = split(fill_value)
-        explicit = unit is not None
-        unit = _like_unit(unit, x_unit, fill_unit)
-        fill_value = _fill_value("full_like", fill_value, fill_unit, unit, explicit)
-
-        if isinstance(fill_value, (bool, int, float, complex)):
-            result = self._xp.full_like(value, fill_value, dtype=dtype, device=device)
-        else:
-            result = _full(
-                self._xp,
-                value.shape,
-                fill_value,
-                dtype=value.dtype if dtype is None else dtype,
-                device=array_api_compat.device(value) if device is None else device,
-            )
+        fill_value, unit = _fill("full_like", fill_value, unit, x_unit)
+        result = _full(
+            self._xp,
+            value.shape,
+            fill_value,
+            dtype=value.dtype if dtype is None else dtype,
+            device=array_api_compat.device(value) if device is None else device,
+        )
 
         return _wrap(result, unit, (x,))
 

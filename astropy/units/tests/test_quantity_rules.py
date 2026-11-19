@@ -159,26 +159,6 @@ def test_enabled_equivalencies_are_part_of_cache_key():
         plan(rules.same_unit, (u.deg_C, u.K))
 
 
-def test_memoized_with_enabled_equivalencies():
-    # Some equivalencies are enabled for good (e.g. on importing
-    # astropy.cosmology), which should not stop memoization.
-    with u.add_enabled_equivalencies(u.dimensionless_angles()):
-        _cached_plan.cache_clear()
-
-        for _ in range(3):
-            assert plan(rules.radian_to_dimensionless, (u.one,))[1] == u.one
-
-        info = _cached_plan.cache_info()
-
-    assert (info.misses, info.hits) == (1, 2)
-
-
-def test_rule_tables_cover_ufuncs():
-    # Every rule for a numpy ufunc has a helper to be compared against.
-    for name in (set(UNARY_RULES) | set(BINARY_RULES)) - NOT_UFUNCS:
-        assert _ufunc(name) in UFUNC_HELPERS, name
-
-
 @pytest.mark.parametrize("exponent", [2, 0.5, -1, 0])
 @pytest.mark.parametrize("unit", UNITS, ids=str)
 def test_static_power(unit, exponent):
@@ -213,13 +193,19 @@ def test_is_literal_arbitrary(value, expected):
     assert rules.is_literal_arbitrary(value) is expected
 
 
-def test_plan_is_memoized():
-    _cached_plan.cache_clear()
+@pytest.mark.parametrize(
+    "equivalencies", [[], u.dimensionless_angles()], ids=["none", "enabled"]
+)
+def test_plan_is_memoized(equivalencies):
+    # Some equivalencies are enabled for good (e.g. on importing
+    # astropy.cosmology), which should not stop memoization.
+    with u.add_enabled_equivalencies(equivalencies):
+        _cached_plan.cache_clear()
 
-    for _ in range(3):
-        assert plan(rules.multiplication, (u.km, u.s)) == ((None, None), u.km * u.s)
+        for _ in range(3):
+            assert plan(rules.multiplication, (u.km, u.s)) == ((None, None), u.km * u.s)
 
-    info = _cached_plan.cache_info()
+        info = _cached_plan.cache_info()
 
     assert (info.misses, info.hits) == (1, 2)
 

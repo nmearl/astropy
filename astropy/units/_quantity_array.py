@@ -20,7 +20,10 @@ __all__ = ["Quantity"]
 
 
 def _as_unit(unit):
-    """Convert ``unit`` to a unit, rejecting units that are not yet supported."""
+    """Convert ``unit`` to a unit.
+
+    Function units and structured units are not yet supported.
+    """
     unit = Unit(unit)
 
     # TODO: this is only here because the unit refactor does not yet support function
@@ -174,6 +177,15 @@ class Quantity:
         return array_api_compat.device(self._value)
 
     def to_device(self, device, /, *, stream=None):
+        """Return a copy of the quantity on ``device``.
+
+        Parameters
+        ----------
+        device : device
+            The device to move the value to; see the Array API standard.
+        stream : int or object, optional
+            A stream for the transfer, for array libraries that support it.
+        """
         value = array_api_compat.to_device(self._value, device, stream=stream)
         return self._new(value, self._unit)
 
@@ -374,10 +386,29 @@ class Quantity:
         return self._new(value, unit)
 
     def to_value(self, unit=None, equivalencies=[]):
-        """The value in ``unit``, as an array of the underlying array library.
+        """The numerical value, possibly in a different unit.
 
-        If ``unit`` is not given, the value is returned in the quantity's own
-        unit.
+        Parameters
+        ----------
+        unit : unit-like, optional
+            The unit in which the value should be given. If not given or `None`,
+            use the current unit.
+        equivalencies : list of tuple, optional
+            A list of equivalence pairs to try if the units are not directly
+            convertible (see :ref:`astropy:unit_equivalencies`). If `None`, no
+            equivalencies are used, not even any enabled globally or within a
+            context.
+
+        Returns
+        -------
+        value : array
+            The value in the unit given, as an array of the underlying array
+            library. It is the array of the quantity itself if no conversion
+            was necessary.
+
+        See Also
+        --------
+        to : Get a new quantity in a different unit.
         """
         if unit is None:
             return self._value
