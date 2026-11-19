@@ -12,7 +12,11 @@ from numpy.testing import assert_allclose, assert_array_equal
 from astropy import units as u
 from astropy.units._quantity_array import Quantity
 from astropy.units.quantity_helper import rules
-from astropy.units.quantity_helper.namespace import QuantityNamespace, units_namespace
+from astropy.units.quantity_helper.namespace import (
+    QuantityNamespace,
+    namespace_for,
+    units_namespace,
+)
 from astropy.units.quantity_helper.rules import PASSTHROUGH
 from astropy.utils.compat.array_api import array_namespace
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
@@ -465,6 +469,24 @@ class TestNamespace:
 
         with pytest.raises(AttributeError):
             ns.no_such_function
+
+    def test_namespace_depends_on_value(self):
+        # The namespace can depend on the array, not only on its type.
+        class Namespace:
+            def __init__(self, name):
+                self.__name__ = name
+
+        class Array:
+            def __init__(self, xp):
+                self._xp = xp
+
+            def __array_namespace__(self, *, api_version=None):
+                return self._xp
+
+        xp1, xp2 = Namespace("xp1"), Namespace("xp2")
+
+        assert namespace_for(Array(xp1))._xp is xp1
+        assert namespace_for(Array(xp2))._xp is xp2
 
     def test_mixed_namespaces(self, xp):
         a = q(xp, 1.0, u.m)
