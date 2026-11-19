@@ -26,7 +26,7 @@ NUMPY_NAMES = {
     "conj": "conjugate",
 }
 # Rules for functions that are not ufuncs in numpy, so have no ufunc helper.
-NOT_UFUNCS = {"real", "imag", "round", "tensordot"}
+NOT_UFUNCS = {"real", "imag", "round"}
 
 UNITS = [
     u.m,
@@ -191,6 +191,9 @@ def test_array_power():
     with pytest.raises(u.UnitTypeError, match="Python number"):
         rules.array_power(u.m, None)
 
+    with pytest.raises(u.UnitTypeError, match="exponent of 'pow' must be"):
+        rules.array_power(None, u.m)
+
 
 def test_prod():
     assert rules.prod_rule(u.m, n=3) == ((None,), u.m**3)
@@ -203,7 +206,8 @@ def test_prod():
 @pytest.mark.parametrize(
     "value, expected",
     [(0, True), (0.0, True), (np.inf, True), (-np.inf, True), (np.nan, True)]
-    + [(1, False), (1.5, False), (np.float64(0), False), (True, False)],
+    + [(1, False), (1.5, False), (np.float64(0), False), (True, False)]
+    + [(10**400, False), (-(10**400), False)],
 )
 def test_is_literal_arbitrary(value, expected):
     assert rules.is_literal_arbitrary(value) is expected
