@@ -15,6 +15,7 @@ from __future__ import annotations
 import functools
 import math
 import numbers
+import operator
 
 import array_api_compat
 import numpy as np
@@ -34,8 +35,10 @@ from .rules import (
     SHAPE_SAME,
     UNARY_RULES,
     array_power,
+    converter,
     dimensionless_to_dimensionless,
     is_literal_arbitrary,
+    multiplication,
     plan,
     prod_rule,
     same_unit,
@@ -240,6 +243,95 @@ def _with_values_unit(result, x):
     return result._replace(values=_wrap(result.values, unit, (x,)))
 
 
+def _created(value, unit):
+    """A quantity in ``unit``, or the plain array if no unit is given."""
+    return value if unit is None else _quantity_array.Quantity._new(value, unit)
+
+
+def _like_unit(unit, x_unit, fill_unit=None):
+    """The unit for a ``*_like`` function."""
+    if unit is not None:
+        return _quantity_array._as_unit(unit)
+
+    for other in (x_unit, fill_unit):
+        if _is_quantity_unit(other):
+            return other
+
+    return None
+
+
+def _fill_value(name, fill_value, fill_unit, unit, explicit):
+    """fill_value converted to ``unit``.
+
+    A plain fill value is taken to be in ``unit`` if that is given explicitly;
+    otherwise, it is treated as for any other function.
+    """
+    if explicit and not _is_quantity_unit(fill_unit):
+        return fill_value
+
+    return apply_converter(fill_value, converter(fill_unit, unit, name))
+
+
+def _full(xp, shape, fill_value, *, dtype=None, device=None):
+    """Like ``xp.full``, but also for array fill values.
+
+    The standard only defines Python scalars as fill values. Arrays (e.g. the
+    value of a quantity) are broadcast instead.
+    """
+    if isinstance(fill_value, (bool, int, float, complex)):
+        return xp.full(shape, fill_value, dtype=dtype, device=device)
+
+    shape = (shape,) if isinstance(shape, int) else tuple(shape)
+    fill_value = xp.astype(fill_value, fill_value.dtype if dtype is None else dtype)
+
+    if device is not None:
+        fill_value = array_api_compat.to_device(fill_value, device)
+
+    # Copied, since broadcast arrays may not be writeable.
+    return xp.asarray(xp.broadcast_to(fill_value, shape), copy=True)
+
+
+def _python_scalar(value):
+    """``value`` as a Python scalar."""
+    if isinstance(value, (int, float)):
+        return value
+
+    try:
+        return operator.index(value)
+    except TypeError:
+        pass
+
+    try:
+        return float(value)
+    except Exception:
+        return value
+
+
+def _range_values(name, args, unit):
+    """start, stop, step (any of which can be `None`) in a common unit.
+
+    That unit is ``unit`` if given, else that of the first quantity. If no
+    argument is a quantity, the values are taken to be in ``unit``.
+    """
+    unit = None if unit is None else _quantity_array._as_unit(unit)
+    present = [arg for arg in args if arg is not None]
+    values, units = zip(*map(split, present))
+    quantity_units = [unit for unit in units if _is_quantity_unit(unit)]
+
+    if not quantity_units:
+        return list(args), unit
+
+    if unit is None:
+        unit = quantity_units[0]
+
+    converted = iter(
+        _python_scalar(apply_converter(value, converter(arg_unit, unit, name)))
+        for value, arg_unit in zip(values, units)
+    )
+
+    return [None if arg is None else next(converted) for arg in args], unit
+
+
 class QuantityNamespace:
     """An Array API namespace for quantities, wrapping that of their values.
 
@@ -371,6 +463,19 @@ class QuantityNamespace:
 
         return _wrap(result, unit, (x,))
 
+    def tensordot(self, x1, x2, /, *, axes=2):
+        """Tensor contraction, with the product of the units of x1 and x2."""
+        _check_arguments("tensordot", (axes,), {})
+        (v1, v2), unit = _converted("tensordot", (x1, x2), multiplication)
+
+        return _wrap(self._xp.tensordot(v1, v2, axes=axes), unit, (x1, x2))
+
+    def vecdot(self, x1, x2, /, *, axis=-1):
+        """Vector dot product, with the product of the units of x1 and x2."""
+        (v1, v2), unit = _converted("vecdot", (x1, x2), multiplication)
+
+        return _wrap(self._xp.vecdot(v1, v2, axis=axis), unit, (x1, x2))
+
     def concat(self, arrays, /, *, axis=0):
         """Arrays joined along an existing axis, converted to a common unit."""
         arrays = tuple(arrays)
@@ -447,6 +552,118 @@ class QuantityNamespace:
     def iinfo(self, type, /):
         """Integer limits, from the value of any quantity."""
         return self._xp.iinfo(split(type)[0])
+
+    def asarray(self, obj, /, *, unit=None, dtype=None, device=None, copy=None):
+        """An array, which is a quantity if ``obj`` is one or ``unit`` is given.
+
+        Unlike for `~astropy.units.Quantity`, the data type is that of
+        ``obj``, as in the standard. Without ``unit``, plain values give a
+        plain array (e.g. a boolean mask).
+        """
+        if isinstance(obj, (_quantity_array.Quantity, _LegacyQuantity)):
+            unit = obj.unit if unit is None else _quantity_array._as_unit(unit)
+            obj = obj.to_value(unit)
+        elif unit is not None:
+            unit = _quantity_array._as_unit(unit)
+
+        value = self._xp.asarray(obj, dtype=dtype, device=device, copy=copy)
+
+        return _created(value, unit)
+
+    def arange(self, start, /, stop=None, step=None, *, unit=None, **kwargs):
+        """Evenly spaced values; quantities are converted to a common unit.
+
+        If not given, ``step`` is 1 in the unit of the result.
+        """
+        (start, stop, step), unit = _range_values("arange", (start, stop, step), unit)
+        step = 1 if step is None else step
+
+        return _created(self._xp.arange(start, stop, step, **kwargs), unit)
+
+    def linspace(self, start, stop, /, num, *, unit=None, **kwargs):
+        """Evenly spaced values; quantities are converted to a common unit."""
+        (start, stop), unit = _range_values("linspace", (start, stop), unit)
+
+        return _created(self._xp.linspace(start, stop, num, **kwargs), unit)
+
+    def empty(self, shape, *, unit=None, dtype=None, device=None):
+        """An uninitialized array, which is a quantity if ``unit`` is given."""
+        value = self._xp.empty(shape, dtype=dtype, device=device)
+
+        return _created(value, _like_unit(unit, None))
+
+    def zeros(self, shape, *, unit=None, dtype=None, device=None):
+        """An array of zeros, which is a quantity if ``unit`` is given."""
+        value = self._xp.zeros(shape, dtype=dtype, device=device)
+
+        return _created(value, _like_unit(unit, None))
+
+    def ones(self, shape, *, unit=None, dtype=None, device=None):
+        """An array of ones, which is a quantity if ``unit`` is given."""
+        value = self._xp.ones(shape, dtype=dtype, device=device)
+
+        return _created(value, _like_unit(unit, None))
+
+    def eye(self, n_rows, n_cols=None, /, *, k=0, unit=None, dtype=None, device=None):
+        """Ones on a diagonal; a quantity if ``unit`` is given."""
+        value = self._xp.eye(n_rows, n_cols, k=k, dtype=dtype, device=device)
+
+        return _created(value, _like_unit(unit, None))
+
+    def full(self, shape, fill_value, *, unit=None, dtype=None, device=None):
+        """An array filled with fill_value, in ``unit`` or that of fill_value."""
+        value, fill_unit = split(fill_value)
+        explicit = unit is not None
+        unit = _like_unit(unit, fill_unit)
+        value = _fill_value("full", value, fill_unit, unit, explicit)
+        value = _full(self._xp, shape, value, dtype=dtype, device=device)
+
+        return _created(value, unit)
+
+    def empty_like(self, x, /, *, unit=None, dtype=None, device=None):
+        """An uninitialized array like x, in ``unit`` or that of x."""
+        value, x_unit = split(x)
+        result = self._xp.empty_like(value, dtype=dtype, device=device)
+
+        return _wrap(result, _like_unit(unit, x_unit), (x,))
+
+    def zeros_like(self, x, /, *, unit=None, dtype=None, device=None):
+        """An array of zeros like x, in ``unit`` or that of x."""
+        value, x_unit = split(x)
+        result = self._xp.zeros_like(value, dtype=dtype, device=device)
+
+        return _wrap(result, _like_unit(unit, x_unit), (x,))
+
+    def ones_like(self, x, /, *, unit=None, dtype=None, device=None):
+        """An array of ones like x, in ``unit`` or that of x."""
+        value, x_unit = split(x)
+        result = self._xp.ones_like(value, dtype=dtype, device=device)
+
+        return _wrap(result, _like_unit(unit, x_unit), (x,))
+
+    def full_like(self, x, /, fill_value, *, unit=None, dtype=None, device=None):
+        """An array like x filled with fill_value.
+
+        The unit is ``unit`` if given, else that of x, else that of fill_value.
+        """
+        value, x_unit = split(x)
+        fill_value, fill_unit = split(fill_value)
+        explicit = unit is not None
+        unit = _like_unit(unit, x_unit, fill_unit)
+        fill_value = _fill_value("full_like", fill_value, fill_unit, unit, explicit)
+
+        if isinstance(fill_value, (bool, int, float, complex)):
+            result = self._xp.full_like(value, fill_value, dtype=dtype, device=device)
+        else:
+            result = _full(
+                self._xp,
+                value.shape,
+                fill_value,
+                dtype=value.dtype if dtype is None else dtype,
+                device=array_api_compat.device(value) if device is None else device,
+            )
+
+        return _wrap(result, unit, (x,))
 
 
 @functools.cache

@@ -11,8 +11,10 @@ from numpy.testing import assert_allclose, assert_array_equal
 
 from astropy import units as u
 from astropy.units._quantity_array import Quantity
+from astropy.units.quantity_helper import rules
 from astropy.units.quantity_helper.namespace import QuantityNamespace
 from astropy.units.quantity_helper.rules import PASSTHROUGH
+from astropy.utils.compat.array_api import array_namespace
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 
 
@@ -288,6 +290,12 @@ class TestOperators:
         b = q(xp, [1.0, 1.0], u.s)
 
         assert_quantity(a @ b, [3.0, 7.0], u.m * u.s, xp)
+
+    @pytest.mark.parametrize(
+        "name", ["__add__", "__rsub__", "__le__", "__neg__", "__abs__"]
+    )
+    def test_names(self, name):
+        assert getattr(Quantity, name).__name__ == name
 
     def test_python_numbers(self, xp):
         a = q(xp, [1.0, 2.0], u.km)
@@ -632,6 +640,9 @@ class TestUnitFromArguments:
         with pytest.raises(u.UnitTypeError, match="Python number"):
             ns.pow(a, xp.asarray([1.0, 2.0]))
 
+        with pytest.raises(u.UnitTypeError, match="exponent of 'pow' must be"):
+            ns.pow(dimensionless, q(xp, [1.0, 2.0], u.m))
+
     def test_prod(self, xp):
         ns = q(xp, 1.0, u.m).__array_namespace__()
         a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
@@ -689,6 +700,17 @@ class TestUnitFromArguments:
 
         with pytest.raises(u.UnitConversionError):
             ns.clip(a, min=1.0)
+
+    def test_tensordot_and_vecdot(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
+        b = q(xp, [[1.0, 0.0], [0.0, 1.0]], u.s)
+
+        assert_quantity(ns.tensordot(a, b), 5.0, u.m * u.s, xp)
+        assert_quantity(ns.tensordot(a, b, axes=1), [[1, 2], [3, 4]], u.m * u.s, xp)
+        assert_quantity(ns.vecdot(a, b), [1.0, 4.0], u.m * u.s, xp)
+        assert_quantity(ns.vecdot(a, b, axis=-2), [1.0, 4.0], u.m * u.s, xp)
+        assert_quantity(ns.vecdot(a, xp.asarray([1.0, 1.0])), [3, 7], u.m, xp)
 
     def test_where(self, xp):
         ns = q(xp, 1.0, u.m).__array_namespace__()
@@ -803,6 +825,178 @@ class TestDtypeFunctions:
         assert ns.can_cast(a.dtype, xp.float32) == xp.can_cast(xp.float64, xp.float32)
         assert ns.finfo(a).eps == xp.finfo(xp.float64).eps
         assert ns.iinfo(xp.int32).max == 2**31 - 1
+
+
+class TestCreation:
+    def test_asarray(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        assert_quantity(ns.asarray([1.0, 2.0], unit=u.m), [1.0, 2.0], u.m, xp)
+        assert_quantity(ns.asarray(q(xp, 1.0, u.km), unit=u.m), 1000.0, u.m, xp)
+        assert_quantity(ns.asarray(q(xp, 1.0, u.km)), 1.0, u.km, xp)
+        # Without a unit, plain values give plain arrays, e.g. for masks.
+        mask = ns.asarray([True, False])
+
+        assert not isinstance(mask, Quantity)
+        assert mask.dtype == xp.bool
+
+    def test_from_shape(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        assert_quantity(ns.zeros(2, unit=u.s), [0.0, 0.0], u.s, xp)
+        assert_quantity(ns.ones((1, 2), unit=u.s), [[1.0, 1.0]], u.s, xp)
+        assert_quantity(ns.eye(2, unit=u.s), np.eye(2), u.s, xp)
+        assert ns.empty((2, 3), unit=u.s).shape == (2, 3)
+        assert not isinstance(ns.zeros(2), Quantity)
+
+    def test_full(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+
+        assert_quantity(ns.full(2, q(xp, 1.0, u.km)), [1.0, 1.0], u.km, xp)
+        assert_quantity(ns.full(2, q(xp, 1.0, u.km), unit=u.m), [1e3, 1e3], u.m, xp)
+        # A plain fill value is in the unit given.
+        assert_quantity(ns.full(2, 3.0, unit=u.m), [3.0, 3.0], u.m, xp)
+        assert not isinstance(ns.full(2, 3.0), Quantity)
+
+        if xp.__name__ != "jax.numpy":
+            # Results from array fill values can be written to.
+            result = ns.full((2, 2), q(xp, 1.0, u.km))
+            result[0, 0] = q(xp, 2.0, u.km)
+
+            assert_quantity(result, [[2.0, 1.0], [1.0, 1.0]], u.km, xp)
+
+    def test_full_boolean(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        fill = Quantity(xp.asarray(True), u.one, dtype=None)
+        result = ns.full(2, fill)
+
+        assert result.dtype == xp.bool
+        assert_array_equal(to_numpy(result), [True, True])
+
+    def test_like(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.km)
+
+        assert_quantity(ns.zeros_like(a), [0.0, 0.0], u.km, xp)
+        assert_quantity(ns.ones_like(a, unit=u.s), [1.0, 1.0], u.s, xp)
+        assert ns.empty_like(a).unit is u.km
+        assert not isinstance(ns.zeros_like(xp.asarray([1.0])), Quantity)
+        assert type(ns.zeros_like(MyQuantity(xp.asarray([1.0]), u.m))) is MyQuantity
+
+    def test_full_like(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        a = q(xp, [1.0, 2.0], u.km)
+
+        assert_quantity(ns.full_like(a, q(xp, 500.0, u.m)), [0.5, 0.5], u.km, xp)
+        assert_quantity(ns.full_like(a, 0), [0.0, 0.0], u.km, xp)
+        assert_quantity(ns.full_like(a, 2.0, unit=u.s), [2.0, 2.0], u.s, xp)
+
+        plain = xp.asarray([1.0, 2.0])
+
+        assert_quantity(ns.full_like(plain, q(xp, 1.0, u.m)), [1.0, 1.0], u.m, xp)
+
+        # As in arithmetic, other plain numbers are dimensionless.
+        with pytest.raises(u.UnitConversionError):
+            ns.full_like(a, 2.0)
+
+    def test_arange(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        result = ns.arange(0.0, q(xp, 3.0, u.km), q(xp, 1000.0, u.m))
+
+        assert_quantity(result, [0.0, 1.0, 2.0], u.km, xp)
+        assert_quantity(ns.arange(3.0, unit=u.s), [0.0, 1.0, 2.0], u.s, xp)
+        # Without a step, it is 1 in the unit of the result.
+        assert_quantity(ns.arange(q(xp, 3.0, u.m)), [0.0, 1.0, 2.0], u.m, xp)
+        assert not isinstance(ns.arange(3), Quantity)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.arange(q(xp, 3.0, u.m), step=1.0)
+
+    def test_arange_keeps_integers(self):
+        ns = Quantity(1.0, u.m).__array_namespace__()
+        result = ns.arange(Quantity(np.int64(3), u.m, dtype=None))
+
+        assert result.dtype == np.int64
+
+    def test_linspace(self, xp):
+        ns = q(xp, 1.0, u.m).__array_namespace__()
+        result = ns.linspace(q(xp, 1.0, u.m), q(xp, 1.0, u.km), 3)
+
+        assert_quantity(result, [1.0, 500.5, 1000.0], u.m, xp)
+        assert_quantity(ns.linspace(0.0, 1.0, 3, unit=u.s), [0, 0.5, 1], u.s, xp)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.linspace(q(xp, 1.0, u.m), q(xp, 1.0, u.s), 3)
+
+
+# Names the namespace handles, from the rule tables and its methods.
+HANDLED = (
+    set(rules.UNARY_RULES)
+    | set(rules.BINARY_RULES)
+    | rules.REJECT_QUANTITY
+    | rules.REDUCTION_SAME
+    | rules.REDUCTION_PLAIN
+    | rules.SHAPE_SAME
+    | rules.SHAPE_PLAIN
+    | PASSTHROUGH
+    | {name for name in vars(QuantityNamespace) if not name.startswith("_")}
+)
+# Names of the standard that are deliberately not supported.
+UNSUPPORTED = {"from_dlpack", "fft", "linalg"}
+
+
+def test_standard_coverage():
+    # array-api-strict has the names of the standard and few others.
+    xp = pytest.importorskip("array_api_strict")
+    names = {name for name in dir(xp) if not name.startswith("_")}
+    names -= {"ArrayAPIStrictFlags", "Device", "ModuleType"}
+    names -= {name for name in names if "array_api_strict_flags" in name}
+    missing = names - HANDLED - UNSUPPORTED
+
+    assert not missing, f"not handled: {sorted(missing)}"
+
+
+def test_handled_names_resolve(xp):
+    ns = q(xp, 1.0, u.m).__array_namespace__()
+
+    for name in HANDLED:
+        if hasattr(xp, name):
+            getattr(ns, name)
+
+
+def _generic(x, mask_values):
+    """Code written against the standard only, with no knowledge of units."""
+    xp = array_namespace(x)
+    mask = xp.asarray(mask_values)
+    centred = x - xp.mean(x)
+    spread = xp.sqrt(xp.sum(centred**2) / x.shape[0])
+    grid = xp.linspace(xp.min(x), xp.max(x), 3)
+
+    return xp.where(mask, centred, xp.zeros_like(x)), spread, grid
+
+
+class TestGenericCode:
+    def test_namespace_lookup(self, xp):
+        a = q(xp, [1.0, 2.0], u.m)
+
+        assert array_namespace(a) is a.__array_namespace__()
+        assert array_api_compat.array_namespace(a) is a.__array_namespace__()
+
+    def test_expression(self, xp):
+        a = q(xp, [1.0, 2.0, 3.0], u.km)
+        result, spread, grid = _generic(a, [True, False, True])
+
+        assert_quantity(result, [-1.0, 0.0, 1.0], u.km, xp)
+        assert_quantity(spread, (2 / 3) ** 0.5, u.km, xp)
+        assert_quantity(grid, [1.0, 2.0, 3.0], u.km, xp)
+
+    def test_same_code_on_plain_arrays(self, xp):
+        result, spread, grid = _generic(
+            xp.asarray([1.0, 2.0, 3.0]), [True, False, True]
+        )
+
+        assert not isinstance(result, Quantity)
+        assert_allclose(to_numpy(result), [-1.0, 0.0, 1.0])
 
 
 class TestEquivalencies:

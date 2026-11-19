@@ -23,6 +23,8 @@ def _as_unit(unit):
     """Convert ``unit`` to a unit, rejecting units that are not yet supported."""
     unit = Unit(unit)
 
+    # TODO: this is only here because the unit refactor does not yet support function
+    #  or structured units.
     if not isinstance(unit, UnitBase):
         raise NotImplementedError(
             f"quantities with {type(unit).__name__} units are not yet supported."
@@ -38,8 +40,8 @@ def _is_operand(x):
     ) or array_api_compat.is_array_api_obj(x)
 
 
-def _binary_op(name, reflected=False):
-    """An operator that calls the binary namespace function ``name``."""
+def _binary_op(op_name, name, reflected=False):
+    """The operator ``op_name``, calling the binary namespace function ``name``."""
 
     def op(self, other):
         if not _is_operand(other):
@@ -49,18 +51,8 @@ def _binary_op(name, reflected=False):
 
         return func(other, self) if reflected else func(self, other)
 
-    op.__name__ = f"__{'r' if reflected else ''}{name}__"
-
-    return op
-
-
-def _unary_op(name):
-    """An operator that calls the unary namespace function ``name``."""
-
-    def op(self):
-        return getattr(self.__array_namespace__(), name)(self)
-
-    op.__name__ = f"__{name}__"
+    op.__name__ = op_name
+    op.__qualname__ = f"Quantity.{op_name}"
 
     return op
 
@@ -230,25 +222,31 @@ class Quantity:
             )
         return (self[i] for i in range(self.shape[0]))
 
-    __add__ = _binary_op("add")
-    __radd__ = _binary_op("add", reflected=True)
-    __sub__ = _binary_op("subtract")
-    __rsub__ = _binary_op("subtract", reflected=True)
-    __floordiv__ = _binary_op("floor_divide")
-    __rfloordiv__ = _binary_op("floor_divide", reflected=True)
-    __mod__ = _binary_op("remainder")
-    __rmod__ = _binary_op("remainder", reflected=True)
-    __matmul__ = _binary_op("matmul")
-    __rmatmul__ = _binary_op("matmul", reflected=True)
-    __pow__ = _binary_op("pow")
-    __rpow__ = _binary_op("pow", reflected=True)
-    __lt__ = _binary_op("less")
-    __le__ = _binary_op("less_equal")
-    __gt__ = _binary_op("greater")
-    __ge__ = _binary_op("greater_equal")
-    __neg__ = _unary_op("negative")
-    __pos__ = _unary_op("positive")
-    __abs__ = _unary_op("abs")
+    __add__ = _binary_op("__add__", "add")
+    __radd__ = _binary_op("__radd__", "add", reflected=True)
+    __sub__ = _binary_op("__sub__", "subtract")
+    __rsub__ = _binary_op("__rsub__", "subtract", reflected=True)
+    __floordiv__ = _binary_op("__floordiv__", "floor_divide")
+    __rfloordiv__ = _binary_op("__rfloordiv__", "floor_divide", reflected=True)
+    __mod__ = _binary_op("__mod__", "remainder")
+    __rmod__ = _binary_op("__rmod__", "remainder", reflected=True)
+    __matmul__ = _binary_op("__matmul__", "matmul")
+    __rmatmul__ = _binary_op("__rmatmul__", "matmul", reflected=True)
+    __pow__ = _binary_op("__pow__", "pow")
+    __rpow__ = _binary_op("__rpow__", "pow", reflected=True)
+    __lt__ = _binary_op("__lt__", "less")
+    __le__ = _binary_op("__le__", "less_equal")
+    __gt__ = _binary_op("__gt__", "greater")
+    __ge__ = _binary_op("__ge__", "greater_equal")
+
+    def __neg__(self):
+        return self.__array_namespace__().negative(self)
+
+    def __pos__(self):
+        return self.__array_namespace__().positive(self)
+
+    def __abs__(self):
+        return self.__array_namespace__().abs(self)
 
     def __mul__(self, other):
         if isinstance(other, UnitBase):
