@@ -12,42 +12,21 @@ from numpy.testing import assert_allclose, assert_array_equal
 from astropy import units as u
 from astropy.units._quantity_array import Quantity
 from astropy.units.quantity_helper import rules
-from astropy.units.quantity_helper.namespace import QuantityNamespace
+from astropy.units.quantity_helper.namespace import QuantityNamespace, units_namespace
 from astropy.units.quantity_helper.rules import PASSTHROUGH
 from astropy.utils.compat.array_api import array_namespace
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 
-
-def _numpy():
-    return array_api_compat.numpy
-
-
-def _strict():
-    import array_api_strict
-
-    return array_api_strict
-
-
-def _jax():
-    import jax
-
-    jax.config.update("jax_enable_x64", True)
-
-    return jax.numpy
-
-
 BACKENDS = [
-    pytest.param(_numpy, id="numpy"),
+    "numpy",
     pytest.param(
-        _strict,
-        id="array_api_strict",
+        "array_api_strict",
         marks=pytest.mark.skipif(
             not HAS_ARRAY_API_STRICT, reason="array-api-strict not installed"
         ),
     ),
     pytest.param(
-        _jax,
-        id="jax",
+        "jax",
         marks=pytest.mark.skipif(
             importlib.util.find_spec("jax") is None, reason="jax not installed"
         ),
@@ -57,13 +36,34 @@ BACKENDS = [
 
 @pytest.fixture(params=BACKENDS)
 def xp(request):
-    return request.param()
+    if request.param == "numpy":
+        yield array_api_compat.numpy
+    elif request.param == "array_api_strict":
+        import array_api_strict
+
+        yield array_api_strict
+    else:
+        import jax
+
+        # Double precision, as for the other back-ends, for these tests only.
+        enabled = jax.config.jax_enable_x64
+        jax.config.update("jax_enable_x64", True)
+
+        try:
+            yield jax.numpy
+        finally:
+            jax.config.update("jax_enable_x64", enabled)
+
+
+@pytest.fixture
+def ns(xp):
+    return units_namespace(xp)
 
 
 def to_numpy(x):
-    """A plain array, or the value of a quantity, as a numpy array."""
-    if isinstance(x, Quantity):
-        x = x.value
+    """A plain array as a numpy array."""
+    # Quantities would be unwrapped, hiding results that should be plain.
+    assert not isinstance(x, Quantity), "expected a plain array"
 
     return np.from_dlpack(x) if hasattr(x, "__dlpack__") else np.asarray(x)
 
@@ -79,7 +79,7 @@ def assert_quantity(result, value, unit, xp):
         array_api_compat.array_namespace(xp.asarray(0.0))
     )
 
-    assert_allclose(to_numpy(result), value)
+    assert_allclose(to_numpy(result.value), value)
 
 
 class MyQuantity(Quantity):
@@ -174,9 +174,10 @@ class TestAttributes:
         assert a.size == 6
         assert a.dtype == xp.float64
         assert a.device == array_api_compat.device(a.value)
-        assert_quantity(a.T, to_numpy(a).T, u.m, xp)
-        assert_quantity(a.to_device(a.device), to_numpy(a), u.m, xp)
-        assert_quantity(a.mT, to_numpy(a).T, u.m, xp)
+        value = to_numpy(a.value)
+        assert_quantity(a.T, value.T, u.m, xp)
+        assert_quantity(a.to_device(a.device), value, u.m, xp)
+        assert_quantity(a.mT, value.T, u.m, xp)
 
     def test_value_and_unit_are_read_only(self):
         a = Quantity(1.0, u.m)
@@ -190,7 +191,7 @@ class TestAttributes:
         assert_quantity(a[1], 2.0, u.m, xp)
         assert_quantity(a[1:], [2.0, 3.0], u.m, xp)
         assert len(a) == 3
-        assert [float(to_numpy(x)) for x in a] == [1.0, 2.0, 3.0]
+        assert [float(to_numpy(x.value)) for x in a] == [1.0, 2.0, 3.0]
         with pytest.raises(TypeError, match="no len"):
             len(a[0])
         with pytest.raises(TypeError, match="not iterable"):
@@ -245,12 +246,15 @@ class TestSetitem:
     def test_mutability_follows_backend(self, xp):
         a = q(xp, [1.0, 2.0], u.km)
 
-        try:
-            a[0] = Quantity(500.0, u.m)
-        except (TypeError, ValueError):
-            # Back-ends with immutable arrays (e.g. JAX).
+        if xp.__name__ == "jax.numpy":
+            # JAX arrays are immutable.
+            with pytest.raises(TypeError):
+                a[0] = q(xp, 500.0, u.m)
+
             assert_quantity(a, [1.0, 2.0], u.km, xp)
         else:
+            a[0] = q(xp, 500.0, u.m)
+
             assert_quantity(a, [0.5, 2.0], u.km, xp)
 
     def test_augmented_assignment_rebinds(self):
@@ -400,10 +404,10 @@ class TestConversion:
         a = q(xp, [1.0, 2.0], u.m)
         result = a.to(u.Hz, equivalencies=u.spectral())
 
-        assert_quantity(result, 299792458.0 / to_numpy(a), u.Hz, xp)
+        assert_quantity(result, 299792458.0 / to_numpy(a.value), u.Hz, xp)
 
         with u.set_enabled_equivalencies(u.spectral()):
-            assert_quantity(a.to(u.Hz), 299792458.0 / to_numpy(a), u.Hz, xp)
+            assert_quantity(a.to(u.Hz), 299792458.0 / to_numpy(a.value), u.Hz, xp)
 
             with pytest.raises(u.UnitConversionError):
                 a.to(u.Hz, equivalencies=None)
@@ -412,8 +416,7 @@ class TestConversion:
         a = q(xp, [1.0, 2.0], u.km / u.ms)
         result = a.decompose()
 
-        assert result.unit == u.m / u.s
-        assert_allclose(to_numpy(result), [1e6, 2e6])
+        assert_quantity(result, [1e6, 2e6], u.m / u.s, xp)
 
     def test_python_scalars(self):
         assert float(Quantity(3.0, u.m / u.cm)) == 300.0
@@ -447,21 +450,16 @@ class TestConversion:
 
 
 class TestNamespace:
-    def test_namespace(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_namespace(self, xp, ns):
         assert isinstance(ns, QuantityNamespace)
-        assert ns is q(xp, 2.0, u.s).__array_namespace__()
+        assert q(xp, 1.0, u.m).__array_namespace__() is ns
+        assert q(xp, 2.0, u.s).__array_namespace__() is ns
 
-    def test_functions_are_kept(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
-        assert ns.add is ns.add
+    def test_function_names(self, ns):
         assert ns.add.__name__ == "add"
+        assert ns.sum.__name__ == "sum"
 
-    def test_unknown_names(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_unknown_names(self, xp, ns):
         with pytest.raises(AttributeError, match="not supported"):
             ns.from_dlpack
 
@@ -474,15 +472,12 @@ class TestNamespace:
         with pytest.raises(TypeError, match="Multiple namespaces"):
             array_api_compat.array_namespace(a, a.value)
 
-    def test_passthrough(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_passthrough(self, xp, ns):
         for name in PASSTHROUGH:
             if hasattr(xp, name):
                 assert getattr(ns, name) is getattr(xp, name)
 
-    def test_plain_arguments(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_plain_arguments(self, xp, ns):
         result = ns.add(xp.asarray([1.0]), xp.asarray([2.0]))
 
         assert not isinstance(result, Quantity)
@@ -490,8 +485,7 @@ class TestNamespace:
 
 
 class TestElementwise:
-    def test_unary(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_unary(self, xp, ns):
         a = q(xp, [1.0, 4.0], u.m)
 
         assert_quantity(ns.sqrt(a), [1.0, 2.0], u.m**0.5, xp)
@@ -504,8 +498,7 @@ class TestElementwise:
         with pytest.raises(u.UnitTypeError):
             ns.exp(a)
 
-    def test_binary(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_binary(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.km)
         b = q(xp, [3000.0, 1000.0], u.m)
 
@@ -520,8 +513,7 @@ class TestElementwise:
         with pytest.raises(u.UnitConversionError):
             ns.add(a, q(xp, 1.0, u.s))
 
-    def test_python_numbers(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_python_numbers(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.km)
 
         assert_quantity(ns.multiply(2.0, a), [2.0, 4.0], u.km, xp)
@@ -536,15 +528,13 @@ class TestElementwise:
 
         assert_quantity(result, [101.0, 201.0], u.dimensionless_unscaled, xp)
 
-    def test_float32_is_kept(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_float32_is_kept(self, xp, ns):
         a = Quantity(xp.asarray([1.0, 2.0], dtype=xp.float32), u.km)
         b = Quantity(xp.asarray([1.0, 2.0], dtype=xp.float32), u.m)
 
         assert ns.add(a, b).dtype == xp.float32
 
-    def test_integer_values_are_scaled_as_float(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_integer_values_are_scaled_as_float(self, xp, ns):
         a = Quantity(xp.asarray([1, 2]), u.km, dtype=xp.int64)
         result = ns.add(q(xp, 1.0, u.m), a)
 
@@ -552,9 +542,7 @@ class TestElementwise:
 
 
 class TestRejected:
-    def test_reject_quantity(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_reject_quantity(self, xp, ns):
         with pytest.raises(TypeError, match="does not accept quantities"):
             ns.logical_and(q(xp, 1.0, u.m), xp.asarray(True))
 
@@ -578,8 +566,7 @@ class TestRejected:
 
 
 class TestReductionsAndShapes:
-    def test_reductions(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_reductions(self, xp, ns):
         a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
 
         assert_quantity(ns.sum(a), 10.0, u.m, xp)
@@ -591,8 +578,7 @@ class TestReductionsAndShapes:
         assert int(to_numpy(ns.argmax(a))) == 3
         assert bool(to_numpy(ns.all(ns.greater(a, 0))))
 
-    def test_shapes(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_shapes(self, xp, ns):
         a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
 
         assert_quantity(ns.reshape(a, (4,)), [1, 2, 3, 4], u.m, xp)
@@ -606,8 +592,7 @@ class TestReductionsAndShapes:
         with pytest.raises(TypeError, match="does not accept quantities"):
             ns.take(a, q(xp, [0], u.m))
 
-    def test_plain_arrays(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_plain_arrays(self, xp, ns):
         result = ns.sum(xp.asarray([1.0, 2.0]))
 
         assert not isinstance(result, Quantity)
@@ -623,8 +608,7 @@ class TestReductionsAndShapes:
 
 
 class TestUnitFromArguments:
-    def test_pow(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_pow(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.m)
 
         assert_quantity(ns.pow(a, 3), [1.0, 8.0], u.m**3, xp)
@@ -643,8 +627,7 @@ class TestUnitFromArguments:
         with pytest.raises(u.UnitTypeError, match="exponent of 'pow' must be"):
             ns.pow(dimensionless, q(xp, [1.0, 2.0], u.m))
 
-    def test_prod(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_prod(self, xp, ns):
         a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
 
         assert_quantity(ns.prod(a), 24.0, u.m**4, xp)
@@ -669,8 +652,7 @@ class TestUnitFromArguments:
         with pytest.raises(u.UnitsError, match="not known"):
             ns.prod(Quantity._new(Lazy(), u.m))
 
-    def test_var(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_var(self, xp, ns):
         a = q(xp, [1.0, 2.0, 3.0, 4.0], u.m)
 
         assert_quantity(ns.var(a), np.var([1, 2, 3, 4]), u.m**2, xp)
@@ -678,8 +660,7 @@ class TestUnitFromArguments:
             ns.var(a, correction=1), np.var([1, 2, 3, 4], ddof=1), u.m**2, xp
         )
 
-    def test_diff(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_diff(self, xp, ns):
         a = q(xp, [1.0, 2.0, 4.0], u.m)
 
         assert_quantity(ns.diff(a), [1.0, 2.0], u.m, xp)
@@ -691,8 +672,7 @@ class TestUnitFromArguments:
         with pytest.raises(u.UnitConversionError):
             ns.diff(a, append=q(xp, [1.0], u.s))
 
-    def test_clip(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_clip(self, xp, ns):
         a = q(xp, [1.0, 2.0, 3.0], u.m)
 
         assert_quantity(ns.clip(a, min=q(xp, 150.0, u.cm)), [1.5, 2.0, 3.0], u.m, xp)
@@ -701,8 +681,7 @@ class TestUnitFromArguments:
         with pytest.raises(u.UnitConversionError):
             ns.clip(a, min=1.0)
 
-    def test_tensordot_and_vecdot(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_tensordot_and_vecdot(self, xp, ns):
         a = q(xp, [[1.0, 2.0], [3.0, 4.0]], u.m)
         b = q(xp, [[1.0, 0.0], [0.0, 1.0]], u.s)
 
@@ -712,8 +691,7 @@ class TestUnitFromArguments:
         assert_quantity(ns.vecdot(a, b, axis=-2), [1.0, 4.0], u.m * u.s, xp)
         assert_quantity(ns.vecdot(a, xp.asarray([1.0, 1.0])), [3, 7], u.m, xp)
 
-    def test_where(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_where(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.m)
         condition = xp.asarray([True, False])
 
@@ -728,8 +706,7 @@ class TestUnitFromArguments:
 
 
 class TestCombining:
-    def test_concat_and_stack(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_concat_and_stack(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.km)
         b = q(xp, [500.0], u.m)
 
@@ -740,15 +717,13 @@ class TestCombining:
         with pytest.raises(u.UnitConversionError):
             ns.concat([a, q(xp, [1.0], u.s)])
 
-    def test_unstack(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_unstack(self, xp, ns):
         first, second = ns.unstack(q(xp, [[1.0, 2.0], [3.0, 4.0]], u.km))
 
         assert_quantity(first, [1.0, 2.0], u.km, xp)
         assert_quantity(second, [3.0, 4.0], u.km, xp)
 
-    def test_broadcast_arrays_and_meshgrid(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_broadcast_arrays_and_meshgrid(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.km)
         b = MyQuantity(xp.asarray([[3.0]]), u.s)
         plain = xp.asarray([5.0])
@@ -768,8 +743,7 @@ class TestCombining:
 
 
 class TestSearchingAndSets:
-    def test_searchsorted(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_searchsorted(self, xp, ns):
         a = q(xp, [1.0, 2.0, 3.0], u.km)
         result = ns.searchsorted(a, q(xp, [1500.0, 2500.0], u.m))
 
@@ -779,11 +753,10 @@ class TestSearchingAndSets:
         with pytest.raises(u.UnitConversionError):
             ns.searchsorted(a, q(xp, [1.0], u.s))
 
-    def test_isin(self, xp):
+    def test_isin(self, xp, ns):
         if not hasattr(xp, "isin"):
             pytest.skip("isin not available")
 
-        ns = q(xp, 1.0, u.m).__array_namespace__()
         # array-api-strict only allows integers for isin.
         a = Quantity(xp.asarray([1, 2]), u.km, dtype=None)
         result = ns.isin(a, Quantity(xp.asarray([2]), u.km, dtype=None))
@@ -798,8 +771,7 @@ class TestSearchingAndSets:
 
             assert_array_equal(to_numpy(result), [True, False])
 
-    def test_unique(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_unique(self, xp, ns):
         a = q(xp, [2.0, 1.0, 2.0], u.m)
 
         assert_quantity(ns.unique_values(a), [1.0, 2.0], u.m, xp)
@@ -817,8 +789,7 @@ class TestSearchingAndSets:
 
 
 class TestDtypeFunctions:
-    def test_dtype_functions(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_dtype_functions(self, xp, ns):
         a = q(xp, 1.0, u.m)
 
         assert ns.result_type(a, xp.float32) == xp.result_type(a.value, xp.float32)
@@ -828,9 +799,7 @@ class TestDtypeFunctions:
 
 
 class TestCreation:
-    def test_asarray(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_asarray(self, xp, ns):
         assert_quantity(ns.asarray([1.0, 2.0], unit=u.m), [1.0, 2.0], u.m, xp)
         assert_quantity(ns.asarray(q(xp, 1.0, u.km), unit=u.m), 1000.0, u.m, xp)
         assert_quantity(ns.asarray(q(xp, 1.0, u.km)), 1.0, u.km, xp)
@@ -840,18 +809,14 @@ class TestCreation:
         assert not isinstance(mask, Quantity)
         assert mask.dtype == xp.bool
 
-    def test_from_shape(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_from_shape(self, xp, ns):
         assert_quantity(ns.zeros(2, unit=u.s), [0.0, 0.0], u.s, xp)
         assert_quantity(ns.ones((1, 2), unit=u.s), [[1.0, 1.0]], u.s, xp)
         assert_quantity(ns.eye(2, unit=u.s), np.eye(2), u.s, xp)
         assert ns.empty((2, 3), unit=u.s).shape == (2, 3)
         assert not isinstance(ns.zeros(2), Quantity)
 
-    def test_full(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_full(self, xp, ns):
         assert_quantity(ns.full(2, q(xp, 1.0, u.km)), [1.0, 1.0], u.km, xp)
         assert_quantity(ns.full(2, q(xp, 1.0, u.km), unit=u.m), [1e3, 1e3], u.m, xp)
         # A plain fill value is in the unit given.
@@ -865,16 +830,15 @@ class TestCreation:
 
             assert_quantity(result, [[2.0, 1.0], [1.0, 1.0]], u.km, xp)
 
-    def test_full_boolean(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_full_boolean(self, xp, ns):
         fill = Quantity(xp.asarray(True), u.one, dtype=None)
         result = ns.full(2, fill)
 
+        assert result.unit is u.one
         assert result.dtype == xp.bool
-        assert_array_equal(to_numpy(result), [True, True])
+        assert_array_equal(to_numpy(result.value), [True, True])
 
-    def test_like(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_like(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.km)
 
         assert_quantity(ns.zeros_like(a), [0.0, 0.0], u.km, xp)
@@ -883,8 +847,7 @@ class TestCreation:
         assert not isinstance(ns.zeros_like(xp.asarray([1.0])), Quantity)
         assert type(ns.zeros_like(MyQuantity(xp.asarray([1.0]), u.m))) is MyQuantity
 
-    def test_full_like(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_full_like(self, xp, ns):
         a = q(xp, [1.0, 2.0], u.km)
 
         assert_quantity(ns.full_like(a, q(xp, 500.0, u.m)), [0.5, 0.5], u.km, xp)
@@ -899,8 +862,7 @@ class TestCreation:
         with pytest.raises(u.UnitConversionError):
             ns.full_like(a, 2.0)
 
-    def test_arange(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_arange(self, xp, ns):
         result = ns.arange(0.0, q(xp, 3.0, u.km), q(xp, 1000.0, u.m))
 
         assert_quantity(result, [0.0, 1.0, 2.0], u.km, xp)
@@ -918,8 +880,7 @@ class TestCreation:
 
         assert result.dtype == np.int64
 
-    def test_linspace(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
+    def test_linspace(self, xp, ns):
         result = ns.linspace(q(xp, 1.0, u.m), q(xp, 1.0, u.km), 3)
 
         assert_quantity(result, [1.0, 500.5, 1000.0], u.m, xp)
@@ -956,9 +917,7 @@ def test_standard_coverage():
     assert not missing, f"not handled: {sorted(missing)}"
 
 
-def test_handled_names_resolve(xp):
-    ns = q(xp, 1.0, u.m).__array_namespace__()
-
+def test_handled_names_resolve(xp, ns):
     for name in HANDLED:
         if hasattr(xp, name):
             getattr(ns, name)
@@ -1000,17 +959,13 @@ class TestGenericCode:
 
 
 class TestEquivalencies:
-    def test_enabled_equivalencies(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_enabled_equivalencies(self, xp, ns):
         with u.set_enabled_equivalencies(u.temperature()):
             result = ns.add(q(xp, 0.0, u.deg_C), q(xp, 10.0, u.K))
 
         assert_quantity(result, -263.15, u.deg_C, xp)
 
-    def test_results_are_not_reused_outside_context(self, xp):
-        ns = q(xp, 1.0, u.m).__array_namespace__()
-
+    def test_results_are_not_reused_outside_context(self, xp, ns):
         with u.set_enabled_equivalencies(u.dimensionless_angles()):
             assert_quantity(ns.exp(q(xp, 0.0, u.rad)), 1.0, u.one, xp)
 
