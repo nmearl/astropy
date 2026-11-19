@@ -634,22 +634,12 @@ def units_namespace(xp):
     return QuantityNamespace(xp)
 
 
-_NAMESPACE_BY_TYPE = {}
-
-
 def namespace_for(value, api_version=None):
-    """The namespace for quantities with ``value``, cached by its type."""
-    if api_version is None:
-        try:
-            return _NAMESPACE_BY_TYPE[type(value)]
-        except KeyError:
-            pass
+    """The namespace for quantities with ``value``.
 
-    namespace = units_namespace(
+    It is looked up for each value, since the namespace of an array can
+    depend on more than its type.
+    """
+    return units_namespace(
         array_api_compat.array_namespace(value, api_version=api_version)
     )
-
-    if api_version is None:
-        _NAMESPACE_BY_TYPE[type(value)] = namespace
-
-    return namespace
