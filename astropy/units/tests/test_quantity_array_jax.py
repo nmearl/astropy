@@ -133,6 +133,36 @@ class TestJit:
         assert_allclose(np.asarray(grid.value), [1.0, 2.0, 3.0])
 
 
+class TestMixedLookup:
+    @staticmethod
+    def _weighted(x, mask, weights):
+        xp = array_namespace(mask, x, weights)
+
+        return xp.where(mask, x, 0), xp.sum(x * weights)
+
+    def test_jit(self):
+        masked, total = jax.jit(self._weighted)(
+            q([1.0, 2.0], u.m), jnp.asarray([True, False]), jnp.asarray([2.0, 3.0])
+        )
+
+        assert masked.unit is u.m
+        assert_allclose(np.asarray(masked.value), [1.0, 0.0])
+        assert total.unit is u.m
+        assert_allclose(np.asarray(total.value), 8.0)
+
+    def test_vmap(self):
+        masked, total = jax.vmap(self._weighted)(
+            q([[1.0, 2.0], [3.0, 4.0]], u.m),
+            jnp.asarray([[True, False], [False, True]]),
+            jnp.asarray([[2.0, 3.0], [4.0, 5.0]]),
+        )
+
+        assert masked.unit is u.m
+        assert_allclose(np.asarray(masked.value), [[1.0, 0.0], [0.0, 4.0]])
+        assert total.unit is u.m
+        assert_allclose(np.asarray(total.value), [8.0, 32.0])
+
+
 class TestOtherTransformations:
     def test_vmap(self):
         def f(x):
