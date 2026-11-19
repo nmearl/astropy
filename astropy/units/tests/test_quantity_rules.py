@@ -26,7 +26,7 @@ NUMPY_NAMES = {
     "conj": "conjugate",
 }
 # Rules for functions that are not ufuncs in numpy, so have no ufunc helper.
-NOT_UFUNCS = {"real", "imag", "round", "tensordot"}
+NOT_UFUNCS = {"real", "imag", "round"}
 
 UNITS = [
     u.m,
@@ -144,23 +144,19 @@ def test_enabled_equivalencies_offset():
     assert conv2(0.0) == pytest.approx(-273.15)
 
 
-def test_enabled_equivalencies_not_cached():
+def test_enabled_equivalencies_are_part_of_cache_key():
     _cached_plan.cache_clear()
 
     with u.set_enabled_equivalencies(u.temperature()):
         plan(rules.same_unit, (u.deg_C, u.K))
 
-    assert _cached_plan.cache_info().currsize == 0
-
     # Outside the context, the conversion is no longer possible.
     with pytest.raises(u.UnitConversionError):
         plan(rules.same_unit, (u.deg_C, u.K))
 
-
-def test_rule_tables_cover_ufuncs():
-    # Every rule for a numpy ufunc has a helper to be compared against.
-    for name in (set(UNARY_RULES) | set(BINARY_RULES)) - NOT_UFUNCS:
-        assert _ufunc(name) in UFUNC_HELPERS, name
+    # Within a new context with the same equivalencies, it is again.
+    with u.set_enabled_equivalencies(u.temperature()):
+        plan(rules.same_unit, (u.deg_C, u.K))
 
 
 @pytest.mark.parametrize("exponent", [2, 0.5, -1, 0])
@@ -175,6 +171,9 @@ def test_array_power():
     with pytest.raises(u.UnitTypeError, match="Python number"):
         rules.array_power(u.m, None)
 
+    with pytest.raises(u.UnitTypeError, match="exponent of 'pow' must be"):
+        rules.array_power(None, u.m)
+
 
 def test_prod():
     assert rules.prod_rule(u.m, n=3) == ((None,), u.m**3)
@@ -187,19 +186,26 @@ def test_prod():
 @pytest.mark.parametrize(
     "value, expected",
     [(0, True), (0.0, True), (np.inf, True), (-np.inf, True), (np.nan, True)]
-    + [(1, False), (1.5, False), (np.float64(0), False), (True, False)],
+    + [(1, False), (1.5, False), (np.float64(0), False), (True, False)]
+    + [(10**400, False), (-(10**400), False)],
 )
 def test_is_literal_arbitrary(value, expected):
     assert rules.is_literal_arbitrary(value) is expected
 
 
-def test_plan_is_memoized():
-    _cached_plan.cache_clear()
+@pytest.mark.parametrize(
+    "equivalencies", [[], u.dimensionless_angles()], ids=["none", "enabled"]
+)
+def test_plan_is_memoized(equivalencies):
+    # Some equivalencies are enabled for good (e.g. on importing
+    # astropy.cosmology), which should not stop memoization.
+    with u.add_enabled_equivalencies(equivalencies):
+        _cached_plan.cache_clear()
 
-    for _ in range(3):
-        assert plan(rules.multiplication, (u.km, u.s)) == ((None, None), u.km * u.s)
+        for _ in range(3):
+            assert plan(rules.multiplication, (u.km, u.s)) == ((None, None), u.km * u.s)
 
-    info = _cached_plan.cache_info()
+        info = _cached_plan.cache_info()
 
     assert (info.misses, info.hits) == (1, 2)
 

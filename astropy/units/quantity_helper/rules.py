@@ -31,20 +31,36 @@ ARBITRARY = _Arbitrary()
 
 
 @functools.lru_cache(maxsize=4096)
-def _cached_plan(rule, units, static):
+def _cached_plan(rule, units, static, equivalencies):
     return rule(*units, **dict(static))
 
 
 def plan(rule: Callable, units: tuple, static: tuple = ()) -> tuple:
-    """
-    Memoized evaluation of ``rule`` definitions. Caches evaluated unit algebra for
-    faster subsequent lookup, except while equivalencies are enabled, since those can
-    give converters that are only valid within their context.
-    """
-    if get_current_unit_registry()._equivalencies:
-        return rule(*units, **dict(static))
+    """Memoized evaluation of ``rule`` for ``units``.
 
-    return _cached_plan(rule, units, static)
+    Parameters
+    ----------
+    rule : callable
+        The rule giving converters and the result unit.
+    units : tuple
+        The units of the arguments.
+    static : tuple of tuple, optional
+        Further keyword arguments for the rule, as ``(name, value)`` pairs, so
+        that they can be part of the cache key (e.g. ``(("name", "add"),)``).
+
+    Returns
+    -------
+    converters, unit
+        A converter for each argument, and the unit of the result.
+
+    Notes
+    -----
+    Since enabled equivalencies can give converters that are only valid within
+    their context, they are part of the cache key.
+    """
+    equivalencies = frozenset(get_current_unit_registry()._equivalencies)
+
+    return _cached_plan(rule, units, static, equivalencies)
 
 
 def _unit_or_dimensionless(unit):
@@ -223,14 +239,25 @@ def division(unit1, unit2, name=""):
 
 def array_power(unit1, unit2, name="pow"):
     """Evaluate x ** y for an array y, which is only possible if x is dimensionless."""
+    kind = "dimensionless quantities"
+
     try:
-        return both_dimensionless(unit1, unit2, name)
+        conv1 = _require(unit1, dimensionless_unscaled, name, kind)
     except UnitTypeError:
         raise UnitTypeError(
             "Raising a quantity with units to an array power requires the "
             "exponent to be a Python number (so that the resulting unit is "
             f"known without inspecting values); got base unit '{unit1}'."
         ) from None
+
+    try:
+        conv2 = _require(unit2, dimensionless_unscaled, name, kind)
+    except UnitTypeError:
+        raise UnitTypeError(
+            f"The exponent of '{name}' must be dimensionless (got unit '{unit2}')."
+        ) from None
+
+    return (conv1, conv2), dimensionless_unscaled
 
 
 # ======================================================================================
@@ -286,8 +313,6 @@ BINARY_RULES: Mapping[str, Callable] = MappingProxyType(
         "multiply": multiplication,
         "divide": division,
         "matmul": multiplication,
-        "tensordot": multiplication,
-        "vecdot": multiplication,
     }
 )
 
@@ -334,4 +359,10 @@ def is_literal_arbitrary(x) -> bool:
     Check whether ``x`` is 0, inf, or nan, which can have any unit. Safe under
     tracing and lazy evaluation.
     """
-    return type(x) in (int, float) and (x == 0 or math.isinf(x) or math.isnan(x))
+    if type(x) is int:
+        return x == 0
+
+    if type(x) is float:
+        return x == 0 or math.isinf(x) or math.isnan(x)
+
+    return False
