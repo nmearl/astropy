@@ -3,12 +3,19 @@
 
 from __future__ import annotations
 
+import functools
 import numbers
 
 import array_api_compat
 import numpy as np
 
-from astropy.units.core import CompositeUnit, Unit, UnitBase, dimensionless_unscaled
+from astropy.units.core import (
+    CompositeUnit,
+    Unit,
+    UnitBase,
+    dimensionless_unscaled,
+    get_current_unit_registry,
+)
 from astropy.units.errors import UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
 from astropy.units.quantity import _upcast_int_to_float
@@ -41,6 +48,29 @@ def _is_operand(x):
     return isinstance(
         x, (Quantity, _LegacyQuantity, numbers.Number)
     ) or array_api_compat.is_array_api_obj(x)
+
+
+def _flatten(q):
+    """The value of ``q`` as the only pytree leaf, and its static data."""
+    # Enabled equivalencies are static data too, so that functions compiled
+    # by jax.jit are traced again if they change.
+    equivalencies = frozenset(get_current_unit_registry()._equivalencies)
+
+    return (q._value,), (q._unit, equivalencies)
+
+
+@functools.cache
+def _register_jax(cls):
+    """Register ``cls`` as a JAX pytree.
+
+    The value is the only leaf, and the unit is static data, so that units are
+    handled while JAX traces a function and never in compiled code.
+    """
+    import jax
+
+    jax.tree_util.register_pytree_node(
+        cls, _flatten, lambda static, leaves: cls._new(leaves[0], static[0])
+    )
 
 
 def _binary_op(op_name, name, reflected=False):
@@ -125,6 +155,9 @@ class Quantity:
 
         self._value = value
         self._unit = unit
+
+        if array_api_compat.is_jax_namespace(xp):
+            _register_jax(type(self))
 
     @classmethod
     def _new(cls, value, unit):

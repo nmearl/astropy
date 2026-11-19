@@ -625,9 +625,12 @@ def units_namespace(xp):
 
     Its functions accept quantities as well as plain arrays, and return
     quantities when the result has a unit. Functions for which it has not been
-    defined how they transform units raise `AttributeError` rather than drop
-    units.
+    defined how they transform units raise `AttributeError`.
     """
+    if array_api_compat.is_jax_namespace(xp):
+        # Results can be quantities that were never initialized.
+        _quantity_array._register_jax(_quantity_array.Quantity)
+
     return QuantityNamespace(xp)
 
 
