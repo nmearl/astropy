@@ -36,10 +36,27 @@ def _cached_plan(rule, units, static, equivalencies):
 
 
 def plan(rule: Callable, units: tuple, static: tuple = ()) -> tuple:
-    """
-    Memoized evaluation of ``rule`` definitions. Caches evaluated unit algebra for
-    faster subsequent lookup. Since enabled equivalencies can give converters that
-    are only valid within their context, they are part of the cache key.
+    """Memoized evaluation of ``rule`` for ``units``.
+
+    Parameters
+    ----------
+    rule : callable
+        The rule giving converters and the result unit.
+    units : tuple
+        The units of the arguments.
+    static : tuple of tuple, optional
+        Further keyword arguments for the rule, as ``(name, value)`` pairs, so
+        that they can be part of the cache key (e.g. ``(("name", "add"),)``).
+
+    Returns
+    -------
+    converters, unit
+        A converter for each argument, and the unit of the result.
+
+    Notes
+    -----
+    Since enabled equivalencies can give converters that are only valid within
+    their context, they are part of the cache key.
     """
     equivalencies = frozenset(get_current_unit_registry()._equivalencies)
 
