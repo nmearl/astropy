@@ -18,6 +18,10 @@ def array_namespace(*values):
     ignored. If none of the values is an array, the NumPy namespace is
     returned.
 
+    Quantities can be mixed with plain arrays of the namespace of their
+    values (e.g. masks or weights), in which case the namespace for
+    quantities is returned.
+
     Parameters
     ----------
     *values
@@ -39,7 +43,33 @@ def array_namespace(*values):
     if not arrays:
         return _numpy_namespace
 
-    return _array_namespace(*arrays)
+    try:
+        return _array_namespace(*arrays)
+    except TypeError:
+        # E.g. quantities and plain arrays.
+        return _quantity_namespace(arrays)
+
+
+def _quantity_namespace(arrays):
+    """The namespace for quantities, if all arrays can be used with it.
+
+    That is, if the arrays are quantities and plain arrays, and the values
+    of the quantities and the plain arrays all belong to the same namespace.
+    """
+    # Imported here, since astropy.units depends on this module.
+    from astropy.units.quantity_helper.namespace import QuantityNamespace
+
+    # Each array is looked up separately, since array_api_compat considers
+    # namespaces with the same name to be the same.
+    namespaces = [_array_namespace(array) for array in arrays]
+    wrapped = [ns._xp if isinstance(ns, QuantityNamespace) else ns for ns in namespaces]
+
+    if any(xp is not wrapped[0] for xp in wrapped):
+        names = ", ".join(xp.__name__ for xp in dict.fromkeys(wrapped))
+
+        raise TypeError(f"Multiple namespaces for array inputs: {names}") from None
+
+    return next(ns for ns in namespaces if isinstance(ns, QuantityNamespace))
 
 
 def default_floating_dtype(xp, device=None):
