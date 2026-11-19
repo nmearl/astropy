@@ -488,7 +488,9 @@ class TestNamespace:
         assert namespace_for(Array(xp1))._xp is xp1
         assert namespace_for(Array(xp2))._xp is xp2
 
-    def test_mixed_namespaces(self, xp):
+    def test_mixed_lookup_with_array_api_compat(self, xp):
+        # Mixing quantities and plain arrays is supported only by astropy's
+        # own lookup, not by array_api_compat.
         a = q(xp, 1.0, u.m)
 
         with pytest.raises(TypeError, match="Multiple namespaces"):
@@ -504,6 +506,118 @@ class TestNamespace:
 
         assert not isinstance(result, Quantity)
         assert_allclose(to_numpy(result), [3.0])
+
+
+class TestMixedLookup:
+    """Looking up the namespace of quantities together with plain arrays."""
+
+    def test_namespace(self, xp, ns):
+        a = q(xp, [1.0, 2.0], u.m)
+        b = MyQuantity(xp.asarray([3.0, 4.0]), u.s)
+        mask = xp.asarray([True, False])
+        weights = xp.asarray([2.0, 3.0])
+
+        assert array_namespace(a, mask) is ns
+        assert array_namespace(mask, a) is ns
+        assert array_namespace(mask, a, weights) is ns
+        assert array_namespace(a, b) is ns
+        assert array_namespace(b, mask, a) is ns
+        assert array_namespace(None, [mask], a, 2.0) is ns
+        assert array_namespace(mask, weights) is xp
+
+    def test_numpy_scalars(self):
+        a = Quantity([1.0, 2.0], u.m)
+        ns = a.__array_namespace__()
+
+        assert array_namespace(a, np.float64(2.0)) is ns
+        assert array_namespace(np.asarray(2.0), a) is ns
+
+    def test_legacy_quantity(self):
+        a = Quantity([1.0, 2.0], u.m)
+
+        assert array_namespace(np.ones(2) * u.cm, a) is a.__array_namespace__()
+
+    @pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
+    @pytest.mark.parametrize("order", [1, -1])
+    def test_different_backends(self, order):
+        import array_api_strict as xps
+
+        numpy_q = Quantity([1.0, 2.0], u.m)
+        strict_q = Quantity(xps.asarray([1.0, 2.0]), u.m)
+
+        for arrays in [
+            (numpy_q, xps.asarray([1.0, 2.0])),
+            (strict_q, np.ones(2)),
+            (numpy_q, strict_q),
+            (numpy_q, np.ones(2), strict_q),
+        ]:
+            with pytest.raises(TypeError, match="Multiple namespaces") as excinfo:
+                array_namespace(*arrays[::order])
+
+            assert "array_api_compat.numpy" in str(excinfo.value)
+            assert "array_api_strict" in str(excinfo.value)
+
+    def test_namespaces_with_the_same_name(self):
+        # Namespaces are compared by identity, not by name.
+        class Namespace:
+            __name__ = "array_api_compat.numpy"
+
+        class Array:
+            def __array_namespace__(self, *, api_version=None):
+                return Namespace()
+
+        with pytest.raises(TypeError, match="Multiple namespaces"):
+            array_namespace(Quantity([1.0, 2.0], u.m), Array())
+
+    def test_expressions(self, xp, ns):
+        def weighted(x, mask, weights):
+            xp = array_namespace(mask, x, weights)
+
+            return xp.where(mask, x, 0), xp.sum(x * weights), xp.multiply(weights, x)
+
+        a = q(xp, [1.0, 2.0], u.m)
+        masked, total, product = weighted(
+            a, xp.asarray([True, False]), xp.asarray([2.0, 3.0])
+        )
+
+        assert_quantity(masked, [1.0, 0.0], u.m, xp)
+        assert_quantity(total, 8.0, u.m, xp)
+        assert_quantity(product, [2.0, 6.0], u.m, xp)
+
+    def test_plain_zeros_are_dimensionless(self, xp, ns):
+        # Unlike the literal 0, an array of zeros has no unit.
+        a = q(xp, [1.0, 2.0], u.m)
+
+        with pytest.raises(u.UnitConversionError):
+            ns.where(xp.asarray([True, False]), a, xp.zeros(2))
+
+    def test_subclasses(self, xp, ns):
+        a = q(xp, [1.0, 2.0], u.m)
+        b = MyQuantity(xp.asarray([100.0, 200.0]), u.cm)
+
+        assert_quantity(ns.add(a, b), [2.0, 4.0], u.m, xp)
+        assert type(ns.add(a, b)) is Quantity
+        assert_quantity(ns.add(b, a), [200.0, 400.0], u.cm, xp)
+        assert type(ns.add(b, a)) is MyQuantity
+
+    @pytest.mark.parametrize("cls", [Quantity, MyQuantity])
+    def test_legacy_quantities(self, cls):
+        legacy = np.asarray([100.0, 200.0]) * u.cm
+        a = cls([1.0, 2.0], u.m)
+        ns = array_namespace(legacy, a)
+
+        # The class of the result is that of the first new quantity.
+        result = ns.add(legacy, a)
+
+        assert type(result) is cls
+        assert result.unit == u.cm
+        assert_allclose(result.value, [200.0, 400.0])
+
+        result = ns.add(a, legacy)
+
+        assert type(result) is cls
+        assert result.unit == u.m
+        assert_allclose(result.value, [2.0, 4.0])
 
 
 class TestElementwise:
