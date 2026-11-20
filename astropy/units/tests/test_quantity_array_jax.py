@@ -3,7 +3,7 @@
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 
 from astropy import units as u
 from astropy.units._quantity_array import Quantity
@@ -40,35 +40,31 @@ def energy(x):
 
 
 def raises_at_boundary():
-    # Recent JAX versions raise before calling __jax_array__, older ones call it.
-    return pytest.raises((TypeError, ValueError), match="__jax_array__|not a valid JAX")
+    return pytest.raises(ValueError, match="__jax_array__")
 
 
-def double(x):
-    return 2 * x
+def zero(x):
+    return 0.0
 
 
 class TestBoundary:
-    """Quantities cannot be passed to or returned from transformations."""
+    """Quantities cannot be traced, so cannot be transformation inputs or outputs."""
 
     @pytest.mark.parametrize(
         "transform",
         [
-            pytest.param(jax.jit(double), id="jit"),
-            pytest.param(lambda x: jax.jit(double).lower(x), id="lower"),
-            pytest.param(lambda x: jax.eval_shape(double, x), id="eval_shape"),
-            pytest.param(jax.vmap(double), id="vmap"),
-            pytest.param(jax.grad(lambda x: x.value[0]), id="grad"),
-            pytest.param(
-                jax.value_and_grad(lambda x: x.value[0]),
-                id="value_and_grad",
-            ),
-            pytest.param(jax.jacfwd(double), id="jacfwd"),
-            pytest.param(jax.jacrev(double), id="jacrev"),
-            pytest.param(jax.hessian(double), id="hessian"),
-            pytest.param(lambda x: jax.jvp(double, (x,), (x,)), id="jvp"),
-            pytest.param(lambda x: jax.vjp(double, x), id="vjp"),
-            pytest.param(jax.checkpoint(double), id="checkpoint"),
+            pytest.param(jax.jit(zero), id="jit"),
+            pytest.param(lambda x: jax.jit(zero).lower(x), id="lower"),
+            pytest.param(lambda x: jax.eval_shape(zero, x), id="eval_shape"),
+            pytest.param(jax.vmap(zero), id="vmap"),
+            pytest.param(jax.grad(zero), id="grad"),
+            pytest.param(jax.value_and_grad(zero), id="value_and_grad"),
+            pytest.param(jax.jacfwd(zero), id="jacfwd"),
+            pytest.param(jax.jacrev(zero), id="jacrev"),
+            pytest.param(jax.hessian(zero), id="hessian"),
+            pytest.param(lambda x: jax.jvp(zero, (x,), (x,)), id="jvp"),
+            pytest.param(lambda x: jax.vjp(zero, x), id="vjp"),
+            pytest.param(jax.checkpoint(zero), id="checkpoint"),
             pytest.param(
                 lambda x: jax.lax.scan(lambda c, _: (c, None), x, None, length=2),
                 id="scan",
@@ -93,16 +89,32 @@ class TestBoundary:
         with raises_at_boundary():
             transform(lambda x: Quantity(x, u.m))(jnp.asarray([1.0, 2.0]))
 
-    def test_conversion(self):
-        with pytest.raises(TypeError):
-            jnp.asarray(q([1.0, 2.0], u.m))
+    @pytest.mark.parametrize("dtype", [None, bool])
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_conversion(self, dtype, nested):
+        a = q([1.0, 2.0], u.m)
+
+        with pytest.raises(TypeError, match="cannot be converted"):
+            jnp.asarray([a, a] if nested else a, dtype=dtype)
+
+    def test_conversion_of_dimensionless(self):
+        # As for numpy arrays.
+        result = jnp.asarray(q([1.0, 2.0], u.percent))
+
+        assert not isinstance(result, Quantity)
+        assert_allclose(np.asarray(result), [0.01, 0.02])
 
     def test_operators_of_plain_arrays(self):
         # JAX arrays defer to quantities.
-        result = jnp.asarray([2.0, 3.0]) * q([1.0, 2.0], u.m)
+        a = q([1.0, 2.0], u.m)
+        result = jnp.asarray([2.0, 3.0]) * a
 
         assert result.unit is u.m
         assert_allclose(np.asarray(result.value), [2.0, 6.0])
+
+        result = jnp.asarray([2.0, 3.0]) < q([150.0, 350.0], u.percent)
+
+        assert_array_equal(np.asarray(result), [False, True])
 
     def test_tree_leaf(self):
         a = q([1.0, 2.0], u.m)
@@ -196,6 +208,20 @@ class TestQuantitiesInside:
         assert_allclose(np.asarray(jax.grad(jax.jit(energy))(x)), [3.0, 6.0])
         # In J/m2.
         assert_allclose(np.asarray(jax.hessian(energy)(x)), np.diag([3.0, 3.0]))
+
+    def test_untraced_arguments(self):
+        # Arguments that are not differentiated or mapped are not traced.
+        k = q(3.0, u.J / u.m**2)
+
+        def f(x, k):
+            e = k * Quantity(x, u.m) ** 2 / 2
+
+            return array_namespace(e).sum(e).to_value(u.J)
+
+        x = jnp.asarray([1.0, 2.0])
+
+        assert_allclose(np.asarray(jax.grad(f)(x, k)), [3.0, 6.0])
+        assert_allclose(np.asarray(jax.vmap(f, in_axes=(0, None))(x, k)), [1.5, 6.0])
 
     def test_closed_over_quantities_in_other_units(self):
         # The constant in J/cm2 is converted while tracing.
