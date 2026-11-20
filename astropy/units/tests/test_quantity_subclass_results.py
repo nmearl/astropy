@@ -18,6 +18,9 @@ from astropy.coordinates import (
     SpectralQuantity,
 )
 
+# Tests of numpy-specific behavior, for the compatibility layer.
+pytestmark = pytest.mark.numpy_compat
+
 # Metadata that results of the same class should keep.
 METADATA = {
     Longitude: ["wrap_angle"],

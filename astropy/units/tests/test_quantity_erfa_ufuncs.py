@@ -12,6 +12,9 @@ from astropy import units as u
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.units.quantity_helper.erfa import astrom_unit
 
+# Tests of numpy-specific behavior, for the compatibility layer.
+pytestmark = pytest.mark.numpy_compat
+
 ASTROM_UNIT = astrom_unit()
 
 

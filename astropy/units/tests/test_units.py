@@ -15,7 +15,7 @@ from astropy import constants as c
 from astropy import units as u
 from astropy.units import cds, imperial, utils
 from astropy.units.required_by_vounit import GsolLum, ksolMass, nsolRad
-from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT, HAS_DASK
+from astropy.utils.compat.optional_deps import HAS_DASK
 from astropy.utils.exceptions import AstropyDeprecationWarning
 
 FLOAT_EPS = np.finfo(float).eps
@@ -1218,20 +1218,16 @@ def test_hash_correctly_different():
     assert hash(myspeed) != hash(yourspeed)
 
 
-@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
-def test_array_api_strict_arrays():
-    # Ensure strict array api arrays can be passed in/out of Unit.to()
-    # Note that those have non-standard dtype.
-    import array_api_strict as xp
-
+def test_arrays_of_any_back_end(xp):
+    # Ensure arrays of any back-end can be passed in/out of Unit.to()
     data1 = xp.asarray([1.0, 2.0, 3.0])
     data2 = u.m.to(u.km, value=data1)
     assert isinstance(data2, type(data1))
-    assert_allclose(data2, [0.001, 0.002, 0.003])
+    assert_allclose(np.asarray(data2), [0.001, 0.002, 0.003])
 
     data3 = u.K.to(u.deg_C, value=data1, equivalencies=u.temperature())
     assert isinstance(data3, type(data1))
-    assert_allclose(data3, [-272.15, -271.15, -270.15])
+    assert_allclose(np.asarray(data3), [-272.15, -271.15, -270.15])
 
 
 @pytest.mark.skipif(not HAS_DASK, reason="tests dask.array")
