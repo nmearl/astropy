@@ -16,6 +16,9 @@ from astropy.units import Quantity, StructuredUnit, Unit, UnitBase
 from astropy.units.quantity import _structured_unit_like_dtype
 from astropy.utils.masked import Masked
 
+# Structured units are only supported for numpy arrays.
+pytestmark = pytest.mark.numpy_compat
+
 
 class StructuredTestBase:
     @classmethod

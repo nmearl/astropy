@@ -8,6 +8,9 @@ from numpy.testing import assert_array_equal
 from astropy import units as u
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 
+# Tests of numpy-specific behavior, for the compatibility layer.
+pytestmark = pytest.mark.numpy_compat
+
 
 class TestQuantityArrayCopy:
     """

@@ -318,6 +318,7 @@ doctest_subpackage_requires = [
 ]
 markers = [
     "mpl_image_compare",
+    "numpy_compat: tests of numpy-specific behavior of Quantity",
     # pytest-run-parallel markers, registered here so the tests using them
     # also collect under --strict-markers when the plugin is not installed
     "force_parallel_threads(n): force this test to run in n pytest-run-parallel threads",

@@ -23,6 +23,9 @@ from astropy.units.quantity_helper.function_helpers import (
 )
 from astropy.utils.compat import NUMPY_LT_2_1, NUMPY_LT_2_2, NUMPY_LT_2_4, NUMPY_LT_2_6
 
+# Tests of numpy-specific behavior, for the compatibility layer.
+pytestmark = pytest.mark.numpy_compat
+
 VAR_POSITIONAL = inspect.Parameter.VAR_POSITIONAL
 VAR_KEYWORD = inspect.Parameter.VAR_KEYWORD
 POSITIONAL_ONLY = inspect.Parameter.POSITIONAL_ONLY

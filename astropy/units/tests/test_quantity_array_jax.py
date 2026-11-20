@@ -144,6 +144,22 @@ class TestQuantitiesInside:
 
         assert len(calls) == 1
 
+    def test_equivalencies_enabled_while_tracing(self):
+        def to_kelvin(x):
+            return Quantity(x, u.deg_C).to_value(u.K)
+
+        with pytest.raises(u.UnitConversionError):
+            jax.jit(to_kelvin)(jnp.asarray(0.0))
+
+        with u.set_enabled_equivalencies(u.temperature()):
+            result = jax.jit(to_kelvin)(jnp.asarray(0.0))
+
+        assert_allclose(np.asarray(result), 273.15)
+
+        # A new trace outside the context does not use the equivalencies.
+        with pytest.raises(u.UnitConversionError):
+            jax.jit(to_kelvin)(jnp.asarray([0.0, 1.0]))
+
     def test_unit_errors_while_tracing(self):
         @jax.jit
         def add(a, b):
