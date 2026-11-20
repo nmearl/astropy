@@ -20,6 +20,9 @@ from astropy.units.quantity_helper.scipy_special import _has_scipy_array_api
 from astropy.utils.compat.numpycompat import NUMPY_LT_2_3, NUMPY_LT_2_6
 from astropy.utils.compat.optional_deps import HAS_SCIPY
 
+# Tests of numpy-specific behavior, for the compatibility layer.
+pytestmark = pytest.mark.numpy_compat
+
 
 class testcase(NamedTuple):
     """A test case for a ufunc."""

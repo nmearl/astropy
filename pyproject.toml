@@ -49,7 +49,7 @@ dependencies = [
     "configobj>=5.0.9",
     "numpy>=2.0",
     "packaging>=25.0",
-    "pyerfa>=2.0.1.3",  # for >=2.0.1.7, adjust structured_units.rst and doctest-requires
+    "pyerfa>=2.0.1.3", # for >=2.0.1.7, adjust structured_units.rst and doctest-requires
     "PyYAML>=6.0.1",
 ]
 
@@ -58,7 +58,7 @@ dependencies = [
 recommended = [
     "scipy>=1.13",
     "matplotlib>=3.8.4",
-    "narwhals>=1.42.0",  # keep in sync with dependency-groups.dataframe
+    "narwhals>=1.42.0", # keep in sync with dependency-groups.dataframe
 ]
 # Optional IPython-related behavior is in many places in Astropy. IPython is a complex
 # dependency that occasionally requires pinning one of it's upstream dependencies. If
@@ -70,7 +70,7 @@ ipython = [
 pandas = [
     "pandas[html]>=2.2.2", # keep in sync with astropy[typing]
 ]
-jupyter = [  # these are optional dependencies for utils.console and table
+jupyter = [# these are optional dependencies for utils.console and table
     "astropy[ipython]",
     "astropy[pandas]",
     "ipywidgets>=7.7.3",
@@ -100,13 +100,13 @@ all = [
     "mpmath>=1.2.1",
     "asdf-astropy>=0.11.0",
     "bottleneck>=1.4.0",
-    "fsspec[http,s3]>=2023.4.0",  # keep in sync with dependency-groups.dataframe
+    "fsspec[http,s3]>=2023.4.0", # keep in sync with dependency-groups.dataframe
     "s3fs>=2023.4.0",
     "uncompresspy>=0.4.0"
 ]
 # The base set of test-time dependencies.
 test = [
-    "setuptools>=77.0.0",  # can be removed once the astropy.wcs C API tests are removed
+    "setuptools>=77.0.0", # can be removed once the astropy.wcs C API tests are removed
     "coverage>=7.2.7",
     "hypothesis>=6.84.0",
     "pytest>=9.0.0",
@@ -122,14 +122,13 @@ test = [
 ]
 test_all = [
     # Install grouped optional dependencies
-    "astropy[all]",  # installs all optional run-time dependencies
+    "astropy[all]", # installs all optional run-time dependencies
     "astropy[test]",
     # Install all remaining dependencies
     "objgraph>=3.1.2",
     "skyfield>=1.42.0",
     "sgp4>=2.23",
     "array-api-strict>=1.0",
-
     # 0.2.2 works on *some* platforms we support, though not all
     # 1.0.0 would be a more universal lower bound, but it also
     # requires numpy>=2.4. Because dependency trees are resolved
@@ -144,17 +143,17 @@ typing = [
     "narwhals>=1.42.0" # keep in sync with dependency-groups.dataframe
 ]
 docs = [
-    "astropy[recommended]",  # installs the [recommended] dependencies
-    "sphinx>=8.2.0,<9",  # keep in sync with docs/conf.py
+    "astropy[recommended]", # installs the [recommended] dependencies
+    "sphinx>=8.2.0,<9", # keep in sync with docs/conf.py
     "sphinx-astropy[confv3]>=1.11",
     "pytest>=8.0.0",
     "sphinx-changelog>=1.4.0",
     "sphinx_design>=0.6.1",
     "Jinja2>=3.1.3",
     "sphinxcontrib-globalsubs>=0.1.1",
-    "matplotlib!=3.9.0",  # https://github.com/matplotlib/matplotlib/issues/28234
+    "matplotlib!=3.9.0", # https://github.com/matplotlib/matplotlib/issues/28234
     "dask[dataframe]>=2024.8.0", # keep in sync with dependency-groups.dataframe
-    "fsspec[http,s3]>=2023.4.0",  # keep in sync with dependency-groups.dataframe
+    "fsspec[http,s3]>=2023.4.0", # keep in sync with dependency-groups.dataframe
 ]
 
 [project.urls]
@@ -176,13 +175,13 @@ wcslint = "astropy.wcs.wcslint:main"
 
 [build-system]
 requires = ["setuptools>=77.0.0",
-            "setuptools_scm>=8.0.0",
-            "cython>=3.0.0, <4",
-            "numpy>=2.0.0, <3",
-            "extension-helpers>=1.4,<2",
-            "pyerfa>=2.0.1.3",
-            "configobj>=5.0.9",
-            "array-api-compat>=1.9",
+    "setuptools_scm>=8.0.0",
+    "cython>=3.0.0, <4",
+    "numpy>=2.0.0, <3",
+    "extension-helpers>=1.4,<2",
+    "pyerfa>=2.0.1.3",
+    "configobj>=5.0.9",
+    "array-api-compat>=1.9",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -205,22 +204,22 @@ image_tests = [
 ]
 pyinstaller = [
     "pyinstaller>=6.16.0",
-    {include-group = "image_tests"},
+    { include-group = "image_tests" },
 ]
 
 # re-define historical optional dependencies (a.k.a. 'extras') as
 # user-invisible, PEP 735 dependency groups
 # These group together all the dependencies needed for developing in Astropy.
 dev = [
-    "astropy[recommended]",  # installs the most common optional dependencies
+    "astropy[recommended]", # installs the most common optional dependencies
     "astropy[test]",
     "astropy[docs]",
     "astropy[typing]",
 ]
 dev_all = [
-    {include-group = "dev"},
-    {include-group = "dataframe"},
-    {include-group = "image_tests"},
+    { include-group = "dev" },
+    { include-group = "dataframe" },
+    { include-group = "image_tests" },
     "astropy[test_all]",
     "tox>=4.33.0", # keep in sync with tox.minversion in tox.ini
 ]
@@ -303,9 +302,9 @@ doctest_norecursedirs = [
 ]
 doctest_subpackage_requires = [
     "astropy/table/mixins/dask.py = dask",
-    "docs/units/type_hints.rst = python<=3.13",  # PYTHON_LT_3_14 (PR 18140)
-    "docs/units/structured_units.rst = pyerfa<2.0.1.7",  # PYERFA_LT_2_0_1_7
-    "docs/timeseries/index.rst = numpy>=2.2.0",  # not NUMPY_LT_2_2 (PR 19509)
+    "docs/units/type_hints.rst = python<=3.13", # PYTHON_LT_3_14 (PR 18140)
+    "docs/units/structured_units.rst = pyerfa<2.0.1.7", # PYERFA_LT_2_0_1_7
+    "docs/timeseries/index.rst = numpy>=2.2.0", # not NUMPY_LT_2_2 (PR 19509)
     "astropy/modeling/_fitting_parallel.py = dask",
     "docs/modeling/parallel-fitting.rst = dask",
     "docs/coordinates/example_gallery_plot_galactocentric_frame.rst = matplotlib",
@@ -317,6 +316,7 @@ doctest_subpackage_requires = [
 ]
 markers = [
     "mpl_image_compare",
+    "numpy_compat: tests of numpy-specific behavior of Quantity",
     # pytest-run-parallel markers, registered here so the tests using them
     # also collect under --strict-markers when the plugin is not installed
     "force_parallel_threads(n): force this test to run in n pytest-run-parallel threads",
@@ -329,8 +329,8 @@ markers = [
 test-skip = ["*-musllinux_x86_64"]
 enable = ["cpython-prerelease"]
 skip = [
-    "cp*t-*",  # https://github.com/astropy/astropy/issues/16916
-    "cp315-pyodide_wasm32",   # numpy has no pyodide wheels for 3.15 yet
+    "cp*t-*", # https://github.com/astropy/astropy/issues/16916
+    "cp315-pyodide_wasm32", # numpy has no pyodide wheels for 3.15 yet
 ]
 environment-pass = ["EXTENSION_HELPERS_PY_LIMITED_API"]
 
@@ -342,160 +342,158 @@ archs = ["auto", "aarch64"]
 
 
 [tool.docformatter]
-    # The ``summaries`` are not (yet) 75 characters because the summary lines can't be
-    # automatically wrapped and must be re-written, which should be done at some point.
-    recursive = true
-    wrap-summaries = 1000
-    wrap-descriptions = 75
-    black = true
-    syntax = "numpy"
+# The ``summaries`` are not (yet) 75 characters because the summary lines can't be
+# automatically wrapped and must be re-written, which should be done at some point.
+recursive = true
+wrap-summaries = 1000
+wrap-descriptions = 75
+black = true
+syntax = "numpy"
 
 
 [tool.coverage]
 
-    [tool.coverage.run]
-        omit = [
-            "astropy/__init__*",
-            "astropy/**/conftest.py",
-            "astropy/**/setup*",
-            "astropy/**/tests/*",
-            "astropy/extern/*",
-            "astropy/utils/compat/*",
-            "astropy/version*",
-            "astropy/wcs/docstrings*",
-            "*/astropy/__init__*",
-            "*/astropy/**/conftest.py",
-            "*/astropy/**/setup*",
-            "*/astropy/**/tests/*",
-            "*/astropy/extern/*",
-            "*/astropy/utils/compat/*",
-            "*/astropy/version*",
-            "*/astropy/wcs/docstrings*",
-        ]
+[tool.coverage.run]
+omit = [
+    "astropy/__init__*",
+    "astropy/**/conftest.py",
+    "astropy/**/setup*",
+    "astropy/**/tests/*",
+    "astropy/extern/*",
+    "astropy/utils/compat/*",
+    "astropy/version*",
+    "astropy/wcs/docstrings*",
+    "*/astropy/__init__*",
+    "*/astropy/**/conftest.py",
+    "*/astropy/**/setup*",
+    "*/astropy/**/tests/*",
+    "*/astropy/extern/*",
+    "*/astropy/utils/compat/*",
+    "*/astropy/version*",
+    "*/astropy/wcs/docstrings*",
+]
 
-    [tool.coverage.report]
-        exclude_also = [
-            # Don't complain about packages we have installed
-            "except ImportError",
-            # Don't complain if tests don't hit defensive assertion code:
-            "raise AssertionError",
-            "raise NotImplementedError",
-            "^\\s*case _ as unreachable:",
-            # Don't complain about script hooks
-            "'def main(.*):'",
-            # Ignore branches that don't pertain to this version of Python
-            "pragma: py{ignore_python_version}",
-            # Don't complain about IPython completion helper
-            "def _ipython_key_completions_",
-            # typing.TYPE_CHECKING is False at runtime
-            "if TYPE_CHECKING:", # TODO: drop this line when coverage>=7.10.1 is required
-            # Ignore typing overloads
-            "@overload",
-        ]
+[tool.coverage.report]
+exclude_also = [
+    # Don't complain about packages we have installed
+    "except ImportError",
+    # Don't complain if tests don't hit defensive assertion code:
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "^\\s*case _ as unreachable:",
+    # Don't complain about script hooks
+    "'def main(.*):'",
+    # Ignore branches that don't pertain to this version of Python
+    "pragma: py{ignore_python_version}",
+    # Don't complain about IPython completion helper
+    "def _ipython_key_completions_",
+    # typing.TYPE_CHECKING is False at runtime
+    "if TYPE_CHECKING:", # TODO: drop this line when coverage>=7.10.1 is required
+    # Ignore typing overloads
+    "@overload",
+]
 
 [tool.ruff]
 lint.extend-select = [
-    "A",     # flake8-builtins
-    "AIR",   # Airflow
-    "ANN",   # flake8-annotations
-    "ARG",   # flake8-unused-arguments
+    "A", # flake8-builtins
+    "AIR", # Airflow
+    "ANN", # flake8-annotations
+    "ARG", # flake8-unused-arguments
     "ASYNC", # flake8-async
-    "B",     # flake8-bugbear
-    "BLE",   # flake8-blind-except
-    "C4",    # flake8-comprehensions
-    "C90",   # mccabe
-    "COM",   # flake8-commas
-    "D",     # pydocstyle
-    "DJ",    # flake8-django
+    "B", # flake8-bugbear
+    "BLE", # flake8-blind-except
+    "C4", # flake8-comprehensions
+    "C90", # mccabe
+    "COM", # flake8-commas
+    "D", # pydocstyle
+    "DJ", # flake8-django
     # "DOC",   # pydocstyle  # TODO: enable when out of preview
-    "DTZ",   # flake8-datetimez
-    "E",     # pycodestyle
-    "EM",    # flake8-errmsg
-    "ERA",   # Eradicate
-    "EXE",   # flake8-executable
-    "F",     # Pyflakes
-    "FA",    # flake8-future-annotations
-    "FBT",   # flake8-boolean-trap
-    "FIX",   # flake8-fixme
-    "FLY",   # flynt
-    "FURB",  # refurb
-    "G",     # flake8-logging-format
-    "I",     # isort
-    "ICN",   # flake8-import-conventions
-    "INP",   # flake8-no-pep420
-    "INT",   # flake8-gettext
-    "ISC",   # flake8-implicit-str-concat
-    "LOG",   # flake8-logging
-    "N",     # pep8-naming
-    "NPY",   # NumPy-specific rules
-    "PERF",  # Perflint
-    "PGH",   # pygrep-hooks
-    "PIE",   # flake8-pie
-    "PL",    # Pylint
-    "PT",    # flake8-pytest-style
-    "PTH",   # flake8-use-pathlib
-    "PYI",   # flake8-pyi
-    "Q",     # flake8-quotes
-    "RET",   # flake8-return
-    "RSE",   # flake8-raise
-    "RUF",   # Ruff-specific rules
-    "S",     # flake8-bandit
-    "SIM",   # flake8-simplify
-    "SLOT",  # flake8-slots
-    "T10",   # flake8-debugger
-    "T20",   # flake8-print
-    "TD",    # flake8-todos
-    "TID",   # flake8-tidy-imports
-    "TRY",   # tryceratops
-    "UP",    # pyupgrade
-    "W",     # pycodestyle
-    "YTT",   # flake8-2020
+    "DTZ", # flake8-datetimez
+    "E", # pycodestyle
+    "EM", # flake8-errmsg
+    "ERA", # Eradicate
+    "EXE", # flake8-executable
+    "F", # Pyflakes
+    "FA", # flake8-future-annotations
+    "FBT", # flake8-boolean-trap
+    "FIX", # flake8-fixme
+    "FLY", # flynt
+    "FURB", # refurb
+    "G", # flake8-logging-format
+    "I", # isort
+    "ICN", # flake8-import-conventions
+    "INP", # flake8-no-pep420
+    "INT", # flake8-gettext
+    "ISC", # flake8-implicit-str-concat
+    "LOG", # flake8-logging
+    "N", # pep8-naming
+    "NPY", # NumPy-specific rules
+    "PERF", # Perflint
+    "PGH", # pygrep-hooks
+    "PIE", # flake8-pie
+    "PL", # Pylint
+    "PT", # flake8-pytest-style
+    "PTH", # flake8-use-pathlib
+    "PYI", # flake8-pyi
+    "Q", # flake8-quotes
+    "RET", # flake8-return
+    "RSE", # flake8-raise
+    "RUF", # Ruff-specific rules
+    "S", # flake8-bandit
+    "SIM", # flake8-simplify
+    "SLOT", # flake8-slots
+    "T10", # flake8-debugger
+    "T20", # flake8-print
+    "TD", # flake8-todos
+    "TID", # flake8-tidy-imports
+    "TRY", # tryceratops
+    "UP", # pyupgrade
+    "W", # pycodestyle
+    "YTT", # flake8-2020
 ]
-lint.ignore = [  # NOTE: non-permanent exclusions should be added to `.ruff.toml` instead.
+lint.ignore = [# NOTE: non-permanent exclusions should be added to `.ruff.toml` instead.
 
     # flake8-builtins (A) : shadowing a Python built-in.
     # New ones should be avoided and is up to maintainers to enforce.
     "A00",
-
     # flake8-annotations (ANN)
-    "ANN001",  # missing-type-function-argument
-    "ANN002",  # missing-type-args
-    "ANN201",  # missing-return-type-undocumented-public-function
-    "ANN205",  # missing-return-type-static-method
+    "ANN001", # missing-type-function-argument
+    "ANN002", # missing-type-args
+    "ANN201", # missing-return-type-undocumented-public-function
+    "ANN205", # missing-return-type-static-method
 
     # flake8-bugbear (B)
-    "B008",  # FunctionCallArgumentDefault
+    "B008", # FunctionCallArgumentDefault
 
     # flake8-commas (COM)
-    "COM812",  # TrailingCommaMissing, conflicts with Ruff formatter
-    "COM819",  # TrailingCommaProhibited, conflicts with Ruff formatter
+    "COM812", # TrailingCommaMissing, conflicts with Ruff formatter
+    "COM819", # TrailingCommaProhibited, conflicts with Ruff formatter
 
     # pydocstyle (D)
     # Missing Docstrings
-    "D102",  # Missing docstring in public method. Don't check b/c docstring inheritance.
-    "D105",  # Missing docstring in magic method. Don't check b/c class docstring.
+    "D102", # Missing docstring in public method. Don't check b/c docstring inheritance.
+    "D105", # Missing docstring in magic method. Don't check b/c class docstring.
     # Whitespace Issues
-    "D200",  # FitsOnOneLine
+    "D200", # FitsOnOneLine
     # Quotes Issues
-    "D300",  # triple-single-quotes, conflicts with Ruff formatter
+    "D300", # triple-single-quotes, conflicts with Ruff formatter
     # Docstring Content Issues
-    "D410",  # BlankLineAfterSection. Using D412 instead.
-    "D400",  # EndsInPeriod.  NOTE: might want to revisit this.
+    "D410", # BlankLineAfterSection. Using D412 instead.
+    "D400", # EndsInPeriod.  NOTE: might want to revisit this.
 
     # pycodestyle (E, W)
-    "E711",  # NoneComparison  (see unfixable)
-    "E741",  # AmbiguousVariableName. Physics variables are often poor code variables
+    "E711", # NoneComparison  (see unfixable)
+    "E741", # AmbiguousVariableName. Physics variables are often poor code variables
 
     # flake8-fixme (FIX)
-    "FIX002",  # Line contains TODO | notes for improvements are OK iff the code works
+    "FIX002", # Line contains TODO | notes for improvements are OK iff the code works
 
     # pep8-naming (N)
-    "N803",  # invalid-argument-name. Physics variables are often poor code variables
-    "N806",  # non-lowercase-variable-in-function. Physics variables are often poor code variables
+    "N803", # invalid-argument-name. Physics variables are often poor code variables
+    "N806", # non-lowercase-variable-in-function. Physics variables are often poor code variables
 
     # pandas-vet (PD)
     "PD",
-
     # pylint (PLC, PLR and PLW)
     "PLR1730", # if-stmt-min-max (not always clearer, and sometimes slower)
     "PLW0642", # self-or-cls-assignment (occasionally desirable, very rarely a mistake)
@@ -504,16 +502,16 @@ lint.ignore = [  # NOTE: non-permanent exclusions should be added to `.ruff.toml
     "PTH123", # builtin-open (not worth creating a Path object, builtin open is fine)
 
     # flake8-quotes (Q)
-    "Q000",  # use double quotes, conflicts with Ruff formatter
+    "Q000", # use double quotes, conflicts with Ruff formatter
 
     # flake8-return (RET)
     # RET can sometimes help find places where refactoring is very helpful,
     # but enforcing it everywhere might create undesirable churn
-    "RET505",  # superfluous-else-return
-    "RET506",  # superfluous-else-raise
+    "RET505", # superfluous-else-return
+    "RET506", # superfluous-else-raise
 
     # Ruff-specific rules (RUF)
-    "RUF005",  # unpack-instead-of-concatenating-to-collection-literal -- it's not clearly faster.
+    "RUF005", # unpack-instead-of-concatenating-to-collection-literal -- it's not clearly faster.
 
     # flake8-simplify (SIM)
     "SIM103", # needless-bool (cannot be safely applied in all contexts (np.True_ is not True))
@@ -522,7 +520,7 @@ lint.ignore = [  # NOTE: non-permanent exclusions should be added to `.ruff.toml
     "SLF001", # private member access
 
     # flake8-todos (TD)
-    "TD002",  # Missing author in TODO
+    "TD002", # Missing author in TODO
 ]
 exclude = [
     "astropy/extern/*",
@@ -536,20 +534,20 @@ exclude = [
 "astropy/config/_tempfile_shim.py" = ["UP032", "PLE0704", "PTH"]
 "astropy/modeling/models/__init__.py" = ["F405"]
 "astropy/utils/decorators.py" = [
-    "D214", "D215",  # keep Examples section indented.
-    "D411",  # sphinx treats spaced example sections as real sections
+    "D214", "D215", # keep Examples section indented.
+    "D411", # sphinx treats spaced example sections as real sections
 ]
 "test_*.py" = [
-    "ANN201",  # Public function without return type annotation
-    "B018",  # UselessExpression
-    "D",  # pydocstyle
-    "S101",  # Use of assert detected
+    "ANN201", # Public function without return type annotation
+    "B018", # UselessExpression
+    "D", # pydocstyle
+    "S101", # Use of assert detected
     "PLR0917", # too-many-positional-arguments, not relevant for pytest fixtures
 ]
 ".pyinstaller/*.py" = ["INP001"]  # Not a package.
 "conftest.py" = ["INP001"]  # Part of configuration, not a package.
 "docs/*.py" = [
-    "INP001",  # implicit-namespace-package. The examples are not a package.
+    "INP001", # implicit-namespace-package. The examples are not a package.
 ]
 "__init__.py" = [
     "E402", # module level import not at top of file
@@ -571,7 +569,7 @@ convention = "numpy"
 
 [tool.repo-review]
 ignore = [
-    "MY",    # ignore MyPy setting checks
+    "MY", # ignore MyPy setting checks
     "PC111", # ignore using `blacken-docs` in pre-commit
     "PC140", # ignore using `mypy` in pre-commit
     "PC180", # ignore using `prettier` in pre-commit
@@ -581,164 +579,164 @@ ignore = [
 ]
 
 [tool.towncrier]
-    package = "astropy"
-    filename = "CHANGES.rst"
-    directory = "docs/changes"
-    underlines = "=-^"
-    template = "docs/changes/template.rst"
-    title_format = "Version {version} ({project_date})"
+package = "astropy"
+filename = "CHANGES.rst"
+directory = "docs/changes"
+underlines = "=-^"
+template = "docs/changes/template.rst"
+title_format = "Version {version} ({project_date})"
 
-    [[tool.towncrier.type]]
-        directory = "feature"
-        name = "New Features"
-        showcontent = true
+[[tool.towncrier.type]]
+directory = "feature"
+name = "New Features"
+showcontent = true
 
-    [[tool.towncrier.type]]
-        directory = "api"
-        name = "API Changes"
-        showcontent = true
+[[tool.towncrier.type]]
+directory = "api"
+name = "API Changes"
+showcontent = true
 
-    [[tool.towncrier.type]]
-        directory = "bugfix"
-        name = "Bug Fixes"
-        showcontent = true
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Bug Fixes"
+showcontent = true
 
-    [[tool.towncrier.type]]
-        directory = "perf"
-        name = "Performance Improvements"
-        showcontent = true
+[[tool.towncrier.type]]
+directory = "perf"
+name = "Performance Improvements"
+showcontent = true
 
-    [[tool.towncrier.type]]
-        directory = "other"
-        name = "Other Changes and Additions"
-        showcontent = true
+[[tool.towncrier.type]]
+directory = "other"
+name = "Other Changes and Additions"
+showcontent = true
 
-    [[tool.towncrier.section]]
-        name = ""
-        path = ""
+[[tool.towncrier.section]]
+name = ""
+path = ""
 
-    [[tool.towncrier.section]]
-        name = "astropy.config"
-        path = "config"
+[[tool.towncrier.section]]
+name = "astropy.config"
+path = "config"
 
-    [[tool.towncrier.section]]
-        name = "astropy.constants"
-        path = "constants"
+[[tool.towncrier.section]]
+name = "astropy.constants"
+path = "constants"
 
-    [[tool.towncrier.section]]
-        name = "astropy.convolution"
-        path = "convolution"
+[[tool.towncrier.section]]
+name = "astropy.convolution"
+path = "convolution"
 
-    [[tool.towncrier.section]]
-        name = "astropy.coordinates"
-        path = "coordinates"
+[[tool.towncrier.section]]
+name = "astropy.coordinates"
+path = "coordinates"
 
-    [[tool.towncrier.section]]
-        name = "astropy.cosmology"
-        path = "cosmology"
+[[tool.towncrier.section]]
+name = "astropy.cosmology"
+path = "cosmology"
 
-    [[tool.towncrier.section]]
-        name = "astropy.extern"
-        path = "extern"
+[[tool.towncrier.section]]
+name = "astropy.extern"
+path = "extern"
 
-    [[tool.towncrier.section]]
-        name = "astropy.io.ascii"
-        path = "io.ascii"
+[[tool.towncrier.section]]
+name = "astropy.io.ascii"
+path = "io.ascii"
 
-    [[tool.towncrier.section]]
-        name = "astropy.io.fits"
-        path = "io.fits"
+[[tool.towncrier.section]]
+name = "astropy.io.fits"
+path = "io.fits"
 
-    [[tool.towncrier.section]]
-        name = "astropy.io.misc"
-        path = "io.misc"
+[[tool.towncrier.section]]
+name = "astropy.io.misc"
+path = "io.misc"
 
-    [[tool.towncrier.section]]
-        name = "astropy.io.registry"
-        path = "io.registry"
+[[tool.towncrier.section]]
+name = "astropy.io.registry"
+path = "io.registry"
 
-    [[tool.towncrier.section]]
-        name = "astropy.io.votable"
-        path = "io.votable"
+[[tool.towncrier.section]]
+name = "astropy.io.votable"
+path = "io.votable"
 
-    [[tool.towncrier.section]]
-        name = "astropy.modeling"
-        path = "modeling"
+[[tool.towncrier.section]]
+name = "astropy.modeling"
+path = "modeling"
 
-    [[tool.towncrier.section]]
-        name = "astropy.nddata"
-        path = "nddata"
+[[tool.towncrier.section]]
+name = "astropy.nddata"
+path = "nddata"
 
-    [[tool.towncrier.section]]
-        name = "astropy.samp"
-        path = "samp"
+[[tool.towncrier.section]]
+name = "astropy.samp"
+path = "samp"
 
-    [[tool.towncrier.section]]
-        name = "astropy.stats"
-        path = "stats"
+[[tool.towncrier.section]]
+name = "astropy.stats"
+path = "stats"
 
-    [[tool.towncrier.section]]
-        name = "astropy.table"
-        path = "table"
+[[tool.towncrier.section]]
+name = "astropy.table"
+path = "table"
 
-    [[tool.towncrier.section]]
-        name = "astropy.tests"
-        path = "tests"
+[[tool.towncrier.section]]
+name = "astropy.tests"
+path = "tests"
 
-    [[tool.towncrier.section]]
-        name = "astropy.time"
-        path = "time"
+[[tool.towncrier.section]]
+name = "astropy.time"
+path = "time"
 
-    [[tool.towncrier.section]]
-        name = "astropy.timeseries"
-        path = "timeseries"
+[[tool.towncrier.section]]
+name = "astropy.timeseries"
+path = "timeseries"
 
-    [[tool.towncrier.section]]
-        name = "astropy.uncertainty"
-        path = "uncertainty"
+[[tool.towncrier.section]]
+name = "astropy.uncertainty"
+path = "uncertainty"
 
-    [[tool.towncrier.section]]
-        name = "astropy.units"
-        path = "units"
+[[tool.towncrier.section]]
+name = "astropy.units"
+path = "units"
 
-    [[tool.towncrier.section]]
-        name = "astropy.utils"
-        path = "utils"
+[[tool.towncrier.section]]
+name = "astropy.utils"
+path = "utils"
 
-    [[tool.towncrier.section]]
-        name = "astropy.visualization"
-        path = "visualization"
+[[tool.towncrier.section]]
+name = "astropy.visualization"
+path = "visualization"
 
-    [[tool.towncrier.section]]
-        name = "astropy.wcs"
-        path = "wcs"
+[[tool.towncrier.section]]
+name = "astropy.wcs"
+path = "wcs"
 
 [tool.changelog-bot]
-    [tool.changelog-bot.towncrier_changelog]
-        enabled = true
-        verify_pr_number = true
-        changelog_skip_label = "no-changelog-entry-needed"
-        help_url = "https://github.com/astropy/astropy/blob/main/docs/changes/README.rst"
-        changelog_missing_long = "There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory following the instructions in the changelog [README](https://github.com/astropy/astropy/blob/main/docs/changes/README.rst)."
-        type_incorrect_long = "The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog [README](https://github.com/astropy/astropy/blob/main/docs/changes/README.rst)"
-        number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
+[tool.changelog-bot.towncrier_changelog]
+enabled = true
+verify_pr_number = true
+changelog_skip_label = "no-changelog-entry-needed"
+help_url = "https://github.com/astropy/astropy/blob/main/docs/changes/README.rst"
+changelog_missing_long = "There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory following the instructions in the changelog [README](https://github.com/astropy/astropy/blob/main/docs/changes/README.rst)."
+type_incorrect_long = "The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog [README](https://github.com/astropy/astropy/blob/main/docs/changes/README.rst)"
+number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
 
 [tool.gilesbot]
-    [tool.gilesbot.circleci_artifacts]
-        enabled = true
+[tool.gilesbot.circleci_artifacts]
+enabled = true
 
-    [tool.gilesbot.pull_requests]
-        enabled = true
+[tool.gilesbot.pull_requests]
+enabled = true
 
-    [tool.gilesbot.circleci_artifacts.py312-test-image-mpl380-cov]
-        url = "results/fig_comparison.html"
-        message = "Click details to see the figure test comparisons, for py312-test-image-mpl380-cov."
-        report_on_fail = true
+[tool.gilesbot.circleci_artifacts.py312-test-image-mpl380-cov]
+url = "results/fig_comparison.html"
+message = "Click details to see the figure test comparisons, for py312-test-image-mpl380-cov."
+report_on_fail = true
 
-    [tool.gilesbot.circleci_artifacts.py312-test-image-mpldev-cov]
-        url = "results/fig_comparison.html"
-        message = "Click details to see the figure test comparisons for py312-test-image-mpldev-cov."
-        report_on_fail = true
+[tool.gilesbot.circleci_artifacts.py312-test-image-mpldev-cov]
+url = "results/fig_comparison.html"
+message = "Click details to see the figure test comparisons for py312-test-image-mpldev-cov."
+report_on_fail = true
 
 [tool.codespell]
 skip = """
@@ -784,7 +782,7 @@ ignore-words-list = """
 
 [tool.numpydoc_validation]
 checks = [
-    "all",  # Report on all checks, except the below
+    "all", # Report on all checks, except the below
     "ES01", # No extended summary found
     "EX01", # No examples section found
     "GL01", # Docstring text (summary) should start in the line immediately after the opening quotes
@@ -800,7 +798,7 @@ checks = [
     "YD01", # No Yields section found
 ]
 # NOTE: Remember to use single quotes for regex in TOML
-exclude = [  # Don't report on objects that match any of these regex
+exclude = [# Don't report on objects that match any of these regex
     '\.__str__$',
     '\.__repr__$',
     # tick_params mirrors the matplotlib API and documents the keyword
@@ -812,7 +810,7 @@ exclude = [  # Don't report on objects that match any of these regex
     # parameters are documented in the class docstring
     '\.WCSAxes\.__init__$',
 ]
-exclude_files = [ # don't process filepaths that match these regex
+exclude_files = [# don't process filepaths that match these regex
     '^astropy/.*/setup_package.py',
     '^astropy/.*/tests/.*',
     '^astropy/__init__.py',
@@ -838,7 +836,7 @@ exclude_files = [ # don't process filepaths that match these regex
     '^astropy/uncertainty/.*',
     '^astropy/units/.*',
     '^astropy/utils/.*',
-    '^astropy/visualization/(?!wcsaxes/).*',  # i.e., validate wcsaxes
+    '^astropy/visualization/(?!wcsaxes/).*', # i.e., validate wcsaxes
     '^astropy/wcs/.*',
     '^docs/.*',
     '^scripts/.*',
@@ -886,7 +884,6 @@ no-build-package = [
     "requests",
     "scipy",
     "sgp4",
-
     # via fsspec
     "aiohttp",
     "frozenlist", # indirect (via aiohttp)
@@ -910,21 +907,17 @@ no-build-package = [
     "psutil",
     "pyzmq",
     "tornado",
-
     # via matplotlib
     "contourpy",
     "kiwisolver",
     "matplotlib",
     "pillow",
     "pyparsing",
-
     # via dask
     "locket", # indirect (via partd 1.4.0)
     "toolz",
-
     # via bleach and html5lib (both unmaintained)
     "webencodings",
-
     # via s3fs
     "wrapt", # indirect (via aiobotocore 2.5.0)
     "yarl", # indirect (via aiohttp 3.8.3 via aiobotocore 2.5.0)
@@ -932,19 +925,15 @@ no-build-package = [
 
     # via sphinx-astropy
     "numpydoc",
-
     # the following *may* be visited during env resolution, although
     # they are not expected to land in the final solution,
     # even with --resolution=lowest
     "cffi",
     "joblib",
-
     # via pyinstaller
     "altgraph",
-
     # via latex
     "future",
-
     # via pandas[html]
     "lxml",
 ]
@@ -969,7 +958,6 @@ constraint-dependencies = [
     # iniconfig 1.0.1 is the first version with proper wheels
     # this constraint can be removed once pytest>=9.0 is required
     "iniconfig>=1.0.1",
-
     # reproduce IPython minimal requirements on its dependencies
     # as of version 9.7.0 (dev), the earliest time at which lower bounds
     # started being consistently declared and tested.
@@ -984,10 +972,8 @@ constraint-dependencies = [
     "pygments>=2.11.0",
     "stack_data>=0.6.0",
     "traitlets>=5.13.0",
-
     # via ipython (can be removed once ipython<8.17 is dropped)
     "pickleshare>=0.7.5",
-
     # via ipython (indirect)
     "asttokens>=3.0.0", # via stack-data 0.17
 
@@ -998,7 +984,6 @@ constraint-dependencies = [
     # can be dropped once we only support versions of pandas
     # requiring beautifulsoup4>=4.14.3
     "soupsieve>=1.6.1",
-
     # via matplotlib
     "pyparsing>=2.4.0", # can be removed once mpl>=3.10.7 is min
     "cycler>=0.12.0", # https://github.com/matplotlib/matplotlib/pull/32188
@@ -1055,7 +1040,7 @@ follow_imports = "silent"
 packages = [
     "astropy.config",
     "astropy.coordinates.sites",
-    "astropy.cosmology",  # See `exclude` for skipped modules
+    "astropy.cosmology", # See `exclude` for skipped modules
 ]
 # Mypy searches these regexes in paths relative to the working directory, so
 # they must not start with `/`: the path is `astropy/...` from the repository
