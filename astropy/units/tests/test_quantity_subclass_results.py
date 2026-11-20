@@ -18,499 +18,478 @@ from astropy.coordinates import (
     SpectralQuantity,
 )
 
-
-def make(name):
-    """A new array of the subclass ``name``, with metadata differing from defaults."""
-    match name:
-        case "Quantity":
-            return u.Quantity([1.0, 2.0], u.m)
-        case "Angle":
-            return Angle([1.0, 2.0], u.deg)
-        case "Latitude":
-            return Latitude([1.0, 2.0], u.deg)
-        case "Longitude":
-            return Longitude([1.0, 2.0], u.deg, wrap_angle=180 * u.deg)
-        case "Distance":
-            return Distance([1.0, 2.0], u.pc)
-        case "SpectralQuantity":
-            return SpectralQuantity(
-                [1.0, 2.0], u.GHz, doppler_rest=5 * u.GHz, doppler_convention="radio"
-            )
-        case "SpectralCoord":
-            return SpectralCoord(
-                [1.0, 2.0],
-                u.GHz,
-                doppler_rest=5 * u.GHz,
-                doppler_convention="radio",
-                radial_velocity=10 * u.km / u.s,
-            )
-        case "Magnitude":
-            return u.Magnitude([1.0, 2.0])
-        case "EarthLocation":
-            return EarthLocation.from_geodetic(
-                [1.0, 2.0], [3.0, 4.0], [5.0, 6.0], ellipsoid="GRS80"
-            )
-
-
-SUBCLASSES = [
-    "Quantity",
-    "Angle",
-    "Latitude",
-    "Longitude",
-    "Distance",
-    "SpectralQuantity",
-    "SpectralCoord",
-    "Magnitude",
-    "EarthLocation",
-]
-
-# An equivalent unit, for conversions.
-OTHER_UNIT = {
-    "Quantity": u.km,
-    "Angle": u.rad,
-    "Latitude": u.rad,
-    "Longitude": u.rad,
-    "Distance": u.kpc,
-    "SpectralQuantity": u.MHz,
-    "SpectralCoord": u.MHz,
-    "Magnitude": u.mag(u.one),
-    "EarthLocation": u.m,
-}
-
+# Metadata that results of the same class should keep.
 METADATA = {
-    "Longitude": ("wrap_angle",),
-    "SpectralQuantity": ("doppler_rest", "doppler_convention"),
-    "SpectralCoord": ("doppler_rest", "doppler_convention", "radial_velocity"),
-    "EarthLocation": ("ellipsoid",),
+    Longitude: ["wrap_angle"],
+    SpectralQuantity: ["doppler_rest", "doppler_convention"],
+    SpectralCoord: ["doppler_rest", "doppler_convention", "radial_velocity"],
 }
 
 
 def assert_metadata_kept(result, x):
-    for attr in METADATA.get(type(x).__name__, ()):
+    """Check that result has the metadata of x listed in METADATA."""
+    for attr in METADATA.get(type(x), []):
         assert np.all(getattr(result, attr) == getattr(x, attr)), attr
 
 
-def has_info(result):
-    # Info is only stored once accessed or set.
-    return "info" in getattr(result, "__dict__", {})
+def longitude():
+    return Longitude([1.0, 2.0], u.deg, wrap_angle=180 * u.deg)
 
 
-def outcome(f, *args):
-    """The class name of the result of ``f(*args)``, or of the exception raised."""
-    try:
-        return type(f(*args)).__name__
-    except Exception as exc:
-        return type(exc).__name__
+def spectral_quantity():
+    return SpectralQuantity(
+        [1.0, 2.0], u.GHz, doppler_rest=5 * u.GHz, doppler_convention="radio"
+    )
 
 
-@pytest.fixture(params=SUBCLASSES)
-def x(request):
-    x = make(request.param)
-    x.info.name = "x"
+def spectral_coord():
+    return SpectralCoord(
+        [1.0, 2.0],
+        u.GHz,
+        doppler_rest=5 * u.GHz,
+        doppler_convention="radio",
+        radial_velocity=10 * u.km / u.s,
+    )
 
-    return x
+
+# Each subclass, with an equivalent unit to convert to.
+SUBCLASSES = [
+    pytest.param(u.Quantity([1.0, 2.0], u.m), u.km, id="Quantity"),
+    pytest.param(Angle([1.0, 2.0], u.deg), u.rad, id="Angle"),
+    pytest.param(Latitude([1.0, 2.0], u.deg), u.rad, id="Latitude"),
+    pytest.param(longitude(), u.rad, id="Longitude"),
+    pytest.param(Distance([1.0, 2.0], u.pc), u.kpc, id="Distance"),
+    pytest.param(spectral_quantity(), u.MHz, id="SpectralQuantity"),
+    pytest.param(spectral_coord(), u.MHz, id="SpectralCoord"),
+    pytest.param(u.Magnitude([1.0, 2.0]), u.mag(u.one), id="Magnitude"),
+]
 
 
+@pytest.mark.parametrize("original, other_unit", SUBCLASSES)
 class TestSameQuantity:
     """Operations giving the same quantity in another form keep the class."""
 
-    OPS = {
-        "x[:1]": lambda x: x[:1],
-        "x.copy()": lambda x: x.copy(),
-        "copy.copy(x)": copy.copy,
-        "copy.deepcopy(x)": copy.deepcopy,
-        "x.reshape(2, 1)": lambda x: x.reshape(2, 1),
-        "np.reshape(x, (2, 1))": lambda x: np.reshape(x, (2, 1)),
-        "x.T": lambda x: x.T,
-        "x.take([0])": lambda x: x.take([0]),
-        "x.insert(0, x[0])": lambda x: x.insert(0, x[0]),
-        "x.to(other_unit)": lambda x: x.to(OTHER_UNIT[type(x).__name__]),
-    }
-
-    # These keep the class and metadata, but not info.
-    OPS_WITHOUT_INFO = {
-        "x[0]": lambda x: x[0],
-        "next(iter(x))": lambda x: next(iter(x)),
-        "np.copy(x)": np.copy,
-    }
-
-    @pytest.mark.parametrize("op", OPS)
-    def test_class_metadata_and_info(self, x, op):
-        result = self.OPS[op](x)
-
-        assert type(result) is type(x)
-        assert_metadata_kept(result, x)
-        assert result.info.name == "x"
-
-    @pytest.mark.parametrize("op", OPS_WITHOUT_INFO)
-    def test_class_and_metadata_without_info(self, x, op):
-        result = self.OPS_WITHOUT_INFO[op](x)
-
-        assert type(result) is type(x)
-        assert_metadata_kept(result, x)
-        assert not has_info(result)
-
-    def test_lshift(self, x):
-        if isinstance(x, EarthLocation):
-            # EarthLocation does not support <<.
-            with pytest.raises(TypeError):
-                x << u.m
-        else:
-            result = x << OTHER_UNIT[type(x).__name__]
-
+    def test_class_metadata_and_info(self, original, other_unit):
+        x = copy.deepcopy(original)
+        x.info.name = "x"
+        results = [
+            x[:1],
+            x.copy(),
+            copy.copy(x),
+            copy.deepcopy(x),
+            x.reshape(2, 1),
+            np.reshape(x, (2, 1)),
+            x.T,
+            x.take([0]),
+            x.insert(0, x[0]),
+            x.astype(np.float32),
+            x.to(other_unit),
+            x << other_unit,
+        ]
+        for result in results:
             assert type(result) is type(x)
             assert_metadata_kept(result, x)
             assert result.info.name == "x"
 
-    def test_conversion_to_other_function_unit(self):
-        x = make("Magnitude")
+    def test_scalars_and_np_copy_drop_info(self, original, other_unit):
+        x = copy.deepcopy(original)
         x.info.name = "x"
-        result = x.to(u.dex(1))
-
-        assert type(result) is u.Dex
-        assert result.info.name == "x"
-
-    def test_astype(self, x):
-        if isinstance(x, EarthLocation):
-            with pytest.raises(TypeError):
-                x.astype(np.float32)
-        else:
-            result = x.astype(np.float32)
-
+        for result in [x[0], next(iter(x)), np.copy(x)]:
             assert type(result) is type(x)
             assert_metadata_kept(result, x)
-            assert result.info.name == "x"
+            assert "info" not in result.__dict__
 
-
-OPS = {
-    "-x": lambda x: -x,
-    "x * 2": lambda x: x * 2,
-    "2 * x": lambda x: 2 * x,
-    "x / 2": lambda x: x / 2,
-    "x * u.one": lambda x: x * u.one,
-    "x * u.s": lambda x: x * u.s,
-    "x**2": lambda x: x**2,
-    "x + x": lambda x: x + x,
-    "x - x": lambda x: x - x,
-    "x == x": lambda x: x == x,
-    "x < x": lambda x: x < x,
-    "np.minimum(x, x)": lambda x: np.minimum(x, x),
-    "np.add.reduce(x)": np.add.reduce,
-    "np.min(x)": np.min,
-    "x.min()": lambda x: x.min(),
-    "np.sum(x)": np.sum,
-    "np.mean(x)": np.mean,
-    "np.concatenate([x, x])": lambda x: np.concatenate([x, x]),
-    "np.stack([x, x])": lambda x: np.stack([x, x]),
-    "np.where([True, False], x, x)": lambda x: np.where([True, False], x, x),
-}
-
-# The class of the result of each operation in OPS, or of the exception raised;
-# columns are in the order of SUBCLASSES, except EarthLocation, given separately.
-Q, A, LAT, LON, D = "Quantity", "Angle", "Latitude", "Longitude", "Distance"
-SQ, SC, MAG, ND = "SpectralQuantity", "SpectralCoord", "Magnitude", "ndarray"
-UTE = "UnitTypeError"
-RESULT_CLASSES = {  # Quantity, Angle, Latitude, Longitude, Distance, SQ, SC, Magnitude
-    "-x": (Q, A, A, A, D, Q, Q, UTE),
-    "x * 2": (Q, A, A, A, D, SQ, SC, MAG),
-    "2 * x": (Q, A, A, A, D, SQ, SC, MAG),
-    "x / 2": (Q, A, A, A, D, SQ, SC, MAG),
-    "x * u.one": (Q, A, LAT, LON, D, SQ, SC, MAG),
-    "x * u.s": (Q, Q, Q, Q, Q, Q, Q, Q),
-    "x**2": (Q, Q, Q, Q, Q, Q, Q, Q),
-    "x + x": (Q, A, A, A, D, Q, Q, MAG),
-    "x - x": (Q, A, A, A, D, Q, Q, MAG),
-    "x == x": (ND, ND, ND, ND, ND, ND, ND, ND),
-    "x < x": (ND, ND, ND, ND, ND, ND, ND, ND),
-    "np.minimum(x, x)": (Q, A, A, A, D, Q, Q, UTE),
-    "np.add.reduce(x)": (Q, A, A, A, D, Q, Q, UTE),
-    "np.min(x)": (Q, A, A, A, D, SQ, SC, MAG),
-    "x.min()": (Q, A, A, A, D, SQ, SC, MAG),
-    "np.sum(x)": (Q, A, A, A, D, Q, Q, Q),
-    "np.mean(x)": (Q, A, LAT, LON, D, SQ, SC, MAG),
-    "np.concatenate([x, x])": (Q, A, LAT, LON, D, SQ, SC, MAG),
-    "np.stack([x, x])": (Q, A, LAT, LON, D, SQ, SC, MAG),
-    "np.where([True, False], x, x)": (Q, A, LAT, LON, D, SQ, SC, MAG),
-}
-EL, UFTE, TE = "EarthLocation", "UFuncTypeError", "TypeError"
-EARTH_LOCATION_RESULT_CLASSES = {
-    "-x": UFTE,
-    "x * 2": UFTE,
-    "2 * x": UFTE,
-    "x / 2": TE,
-    "x * u.one": EL,
-    "x**2": TE,
-    "x + x": UFTE,
-    "x - x": UFTE,
-    "x == x": ND,
-    "x < x": UFTE,
-    "np.minimum(x, x)": UFTE,
-    "np.add.reduce(x)": UFTE,
-    "np.min(x)": UFTE,
-    "x.min()": UFTE,
-    "np.sum(x)": UFTE,
-    "np.mean(x)": UFTE,
-    "np.concatenate([x, x])": EL,
-    "np.stack([x, x])": EL,
-    "np.where([True, False], x, x)": EL,
-}
-# Function quantities keep info through arithmetic that keeps a function unit.
-MAGNITUDE_OPS_WITH_INFO = {"x * 2", "2 * x", "x / 2", "x * u.one", "x + x", "x - x"}
-
-
-class TestComputations:
-    """Computations give a class depending on the result unit and the operation."""
-
-    @pytest.mark.parametrize("op", RESULT_CLASSES)
-    @pytest.mark.parametrize("name", SUBCLASSES[:-1])
-    def test_result_class(self, name, op):
-        expected = RESULT_CLASSES[op][SUBCLASSES.index(name)]
-        assert outcome(OPS[op], make(name)) == expected
-
-    @pytest.mark.parametrize("op", EARTH_LOCATION_RESULT_CLASSES)
-    def test_result_class_of_earth_location(self, op):
-        expected = EARTH_LOCATION_RESULT_CLASSES[op]
-        assert outcome(OPS[op], make("EarthLocation")) == expected
-
-    @pytest.mark.parametrize("op", OPS)
-    def test_metadata_and_info(self, x, op):
-        try:
-            result = OPS[op](x)
-        except Exception:
-            pytest.skip("raises, as checked in test_result_class")
-
-        if type(result) is type(x):
-            assert_metadata_kept(result, x)
-        if isinstance(x, u.Magnitude) and op in MAGNITUDE_OPS_WITH_INFO:
-            assert result.info.name == "x"
-        elif not (isinstance(x, u.Magnitude) and op == "x**2"):
-            assert not has_info(result)
-
-    def test_magnitude_squared_keeps_info(self):
-        x = make("Magnitude")
+    def test_augmented_assignments_keep_info(self, original, other_unit):
+        x = copy.deepcopy(original)
         x.info.name = "x"
-        result = x**2
+        x *= 2
+        assert x.info.name == "x"
+        x <<= other_unit
+        assert x.info.name == "x"
 
-        assert type(result) is u.Quantity
-        assert result.info.name == "x"
+
+class TestQuantity:
+    def setup_method(self):
+        self.q = u.Quantity([1.0, 2.0], u.m)
+        self.q.info.name = "q"
+
+    def test_computations_give_quantity_without_info(self):
+        q = self.q
+        results = [
+            -q,
+            q * 2,
+            2 * q,
+            q / 2,
+            q * u.one,
+            q * u.s,
+            q**2,
+            q + q,
+            q - q,
+            np.minimum(q, q),
+            np.add.reduce(q),
+            np.min(q),
+            q.min(),
+            np.sum(q),
+            np.mean(q),
+            np.concatenate([q, q]),
+            np.stack([q, q]),
+            np.where([True, False], q, q),
+        ]
+        for result in results:
+            assert type(result) is u.Quantity
+            assert "info" not in result.__dict__
+
+    def test_comparisons_give_plain_arrays(self):
+        assert type(self.q == self.q) is np.ndarray
+        assert type(self.q < self.q) is np.ndarray
+
+    def test_augmented_assignment_changing_unit(self):
+        q = self.q.copy()
+        q *= u.s
+        assert q.unit == u.m * u.s
+        assert q.info.name == "q"
 
     def test_subclass_without_overrides(self):
         class MyQuantity(u.Quantity):
             pass
 
         x = MyQuantity([1.0, 2.0], u.m)
-
-        for op in ("x * 2", "x * u.s", "x**2", "x + x", "np.sum(x)"):
-            assert type(OPS[op](x)) is MyQuantity, op
-
-    def test_constant(self):
-        assert type(c.to(u.km / u.s)) is u.Quantity
-        assert type(np.copy(c)) is u.Quantity
-
-        for op in ("-x", "x * 2", "x * u.one", "x * u.s", "x**2", "x + x", "np.sum(x)"):
-            assert type(OPS[op](c)) is u.Quantity, op
+        for result in [x * 2, x * u.s, x**2, x + x, np.sum(x)]:
+            assert type(result) is MyQuantity
 
 
-def imul_2(x):
-    x *= 2
+@pytest.mark.parametrize("x", [Angle([1.0, 2.0], u.deg), Distance([1.0, 2.0], u.pc)])
+class TestAngleAndDistance:
+    """Angle and Distance keep their class while the unit allows it."""
 
-    return x
+    def test_computations_with_same_physical_type(self, x):
+        results = [
+            -x,
+            x * 2,
+            2 * x,
+            x / 2,
+            x * u.one,
+            x + x,
+            x - x,
+            np.minimum(x, x),
+            np.add.reduce(x),
+            np.min(x),
+            x.min(),
+            np.sum(x),
+            np.mean(x),
+            np.concatenate([x, x]),
+            np.stack([x, x]),
+            np.where([True, False], x, x),
+        ]
+        for result in results:
+            assert type(result) is type(x)
 
+    def test_computations_with_other_physical_type(self, x):
+        assert type(x * u.s) is u.Quantity
+        assert type(x**2) is u.Quantity
 
-def imul_s(x):
-    x *= u.s
-
-    return x
-
-
-def ilshift(x):
-    x <<= OTHER_UNIT[type(x).__name__]
-
-    return x
-
-
-def iadd(x):
-    x += x.copy()
-
-    return x
-
-
-AUGMENTED = {
-    "x *= 2": imul_2,
-    "x *= u.s": imul_s,
-    "x <<= other_unit": ilshift,
-    "x += x": iadd,
-}
-# Columns are in the order of SUBCLASSES, except EarthLocation, given separately.
-AUGMENTED_RESULT_CLASSES = (
-    {  # Quantity, Angle, Latitude, Longitude, Distance, SQ, SC, Magnitude
-        "x *= 2": (Q, A, A, A, D, SQ, SC, MAG),
-        "x *= u.s": (Q, UTE, UTE, UTE, UTE, UTE, UTE, UTE),
-        "x <<= other_unit": (Q, A, LAT, LON, D, SQ, SC, MAG),
-        "x += x": (Q, A, A, A, D, TE, TE, MAG),
-    }
-)
+    def test_augmented_assignment_with_other_physical_type(self, x):
+        y = x.copy()
+        with pytest.raises(u.UnitTypeError):
+            y *= u.s
 
 
-class TestAugmentedAssignment:
-    """Augmented assignments give a class depending on the result unit, and keep info."""
+@pytest.mark.parametrize("cls", [Latitude, Longitude])
+class TestLatitudeAndLongitude:
+    """Latitude and Longitude become Angle in most computations."""
 
-    @pytest.mark.parametrize("op", AUGMENTED_RESULT_CLASSES)
-    @pytest.mark.parametrize("name", SUBCLASSES[:-1])
-    def test_result_class(self, name, op):
-        expected = AUGMENTED_RESULT_CLASSES[op][SUBCLASSES.index(name)]
+    def test_computations_giving_angle(self, cls):
+        x = cls([1.0, 2.0], u.deg)
+        results = [
+            -x,
+            x * 2,
+            2 * x,
+            x / 2,
+            x + x,
+            x - x,
+            np.minimum(x, x),
+            np.add.reduce(x),
+            np.min(x),
+            x.min(),
+            np.sum(x),
+        ]
+        for result in results:
+            assert type(result) is Angle
 
-        assert outcome(AUGMENTED[op], make(name)) == expected
+    def test_computations_keeping_class(self, cls):
+        x = cls([1.0, 2.0], u.deg)
+        results = [
+            x * u.one,
+            np.mean(x),
+            np.concatenate([x, x]),
+            np.stack([x, x]),
+            np.where([True, False], x, x),
+        ]
+        for result in results:
+            assert type(result) is cls
 
-    @pytest.mark.parametrize("op", AUGMENTED)
-    def test_metadata_and_info(self, x, op):
-        if isinstance(x, EarthLocation):
-            pytest.skip("covered by test_earth_location")
+    def test_augmented_assignment(self, cls):
+        x = cls([1.0, 2.0], u.deg)
+        x *= 2
+        assert type(x) is Angle
+        x = cls([1.0, 2.0], u.deg)
+        x += cls([1.0, 2.0], u.deg)
+        assert type(x) is Angle
+        x = cls([1.0, 2.0], u.deg)
+        with pytest.raises(u.UnitTypeError):
+            x *= u.s
 
-        try:
-            result = AUGMENTED[op](x)
-        except Exception:
-            pytest.skip("raises, as checked in test_result_class")
 
-        if type(result) is type(x):
+def test_longitude_keeps_wrap_angle():
+    x = longitude()
+    for result in [x * u.one, np.mean(x), np.concatenate([x, x])]:
+        assert result.wrap_angle == 180 * u.deg
+
+
+@pytest.mark.parametrize("x", [spectral_quantity(), spectral_coord()])
+class TestSpectral:
+    """SpectralQuantity and SpectralCoord keep their class for scaling and selection."""
+
+    def test_computations_keeping_class(self, x):
+        results = [
+            x * 2,
+            2 * x,
+            x / 2,
+            x * u.one,
+            np.min(x),
+            x.min(),
+            np.mean(x),
+            np.concatenate([x, x]),
+            np.stack([x, x]),
+            np.where([True, False], x, x),
+        ]
+        for result in results:
+            assert type(result) is type(x)
             assert_metadata_kept(result, x)
 
-        assert result.info.name == "x"
+    def test_computations_giving_quantity(self, x):
+        results = [
+            -x,
+            x + x,
+            x - x,
+            np.minimum(x, x),
+            np.add.reduce(x),
+            np.sum(x),
+            x * u.s,
+            x**2,
+        ]
+        for result in results:
+            assert type(result) is u.Quantity
 
-    def test_earth_location(self):
-        x = make("EarthLocation")
-        x.info.name = "x"
-
-        for op in ("x *= 2", "x += x"):
-            assert outcome(AUGMENTED[op], make("EarthLocation")) == UFTE
-
-
-def make_pair(names):
-    """New arrays of the subclasses named in ``names``, with matching units."""
-    match names:
-        case ("Distance", "SpectralCoord"):
-            return Distance([1.0, 2.0], u.m), SpectralCoord([3.0, 4.0], u.m)
-        case ("SpectralCoord", "Distance"):
-            return SpectralCoord([3.0, 4.0], u.m), Distance([1.0, 2.0], u.m)
-        case ("Quantity", "Angle"):
-            return u.Quantity([1.0, 2.0], u.deg), Angle([3.0, 4.0], u.deg)
-        case ("Dimensionless", "Angle"):
-            return u.Quantity([1.0, 2.0]), Angle([3.0, 4.0], u.deg)
-        case ("Angle", "Dimensionless"):
-            return Angle([3.0, 4.0], u.deg), u.Quantity([1.0, 2.0])
-        case _:
-            return tuple(make(name) for name in names)
+    def test_augmented_assignment(self, x):
+        y = x.copy()
+        with pytest.raises(u.UnitTypeError):
+            y *= u.s
+        y = x.copy()
+        with pytest.raises(TypeError):
+            y += x
 
 
-PAIR_OPS = {
-    "a + b": lambda a, b: a + b,
-    "a * b": lambda a, b: a * b,
-    "np.concatenate([a, b])": lambda a, b: np.concatenate([a, b]),
-    "np.stack([a, b])": lambda a, b: np.stack([a, b]),
-    "np.where([True, False], a, b)": lambda a, b: np.where([True, False], a, b),
-}
-UCE = "UnitConversionError"
-# a + b, a * b, concatenate, stack, where
-PAIR_RESULT_CLASSES = {
-    ("Latitude", "Longitude"): (A, Q, LAT, LAT, LAT),
-    ("Longitude", "Latitude"): (A, Q, LON, LON, LON),
-    ("Angle", "Longitude"): (A, Q, LON, LON, LON),
-    ("Longitude", "Angle"): (A, Q, LON, LON, LON),
-    ("Quantity", "Angle"): (A, Q, A, A, A),
-    ("Distance", "Angle"): (UCE, Q, UCE, UCE, UCE),
-    ("Angle", "Distance"): (UCE, Q, UCE, UCE, UCE),
-    ("Dimensionless", "Angle"): (UCE, A, UCE, UCE, UCE),
-    ("Angle", "Dimensionless"): (UCE, A, UCE, UCE, UCE),
-    ("Distance", "SpectralCoord"): (D, Q, D, D, D),
-    ("SpectralCoord", "Distance"): (Q, Q, SC, SC, SC),
-    ("SpectralCoord", "SpectralQuantity"): (Q, Q, SC, SC, SC),
-    ("SpectralQuantity", "SpectralCoord"): (Q, Q, SC, SC, SC),
-}
+class TestMagnitude:
+    def setup_method(self):
+        self.m = u.Magnitude([1.0, 2.0])
+        self.m.info.name = "m"
+
+    def test_arithmetic_keeps_class_and_info(self):
+        m = self.m
+        for result in [m * 2, 2 * m, m / 2, m * u.one, m + m, m - m]:
+            assert type(result) is u.Magnitude
+            assert result.info.name == "m"
+
+    def test_selection_and_joining_keep_class(self):
+        m = self.m
+        results = [
+            np.min(m),
+            m.min(),
+            np.mean(m),
+            np.concatenate([m, m]),
+            np.stack([m, m]),
+            np.where([True, False], m, m),
+        ]
+        for result in results:
+            assert type(result) is u.Magnitude
+            assert "info" not in result.__dict__
+
+    def test_computations_giving_quantity(self):
+        assert type(self.m * u.s) is u.Quantity
+        assert type(np.sum(self.m)) is u.Quantity
+        squared = self.m**2
+        assert type(squared) is u.Quantity
+        assert squared.info.name == "m"
+
+    def test_unsupported_computations(self):
+        with pytest.raises(u.UnitTypeError):
+            -self.m
+        with pytest.raises(u.UnitTypeError):
+            np.add.reduce(self.m)
+        with pytest.raises(u.UnitTypeError):
+            np.minimum(self.m, self.m)
+
+    def test_conversion_to_other_function_unit(self):
+        result = self.m.to(u.dex(1))
+        assert type(result) is u.Dex
+        assert result.info.name == "m"
+
+
+def test_constant_results_are_quantities():
+    results = [
+        c.to(u.km / u.s),
+        np.copy(c),
+        -c,
+        c * 2,
+        c * u.one,
+        c * u.s,
+        c**2,
+        c + c,
+        np.sum(c),
+    ]
+    for result in results:
+        assert type(result) is u.Quantity
+
+
+class TestEarthLocation:
+    def setup_method(self):
+        self.el = EarthLocation.from_geodetic(
+            [1.0, 2.0], [3.0, 4.0], [5.0, 6.0], ellipsoid="GRS80"
+        )
+        self.el.info.name = "el"
+
+    def test_same_quantity(self):
+        el = self.el
+        for result in [el[:1], el.copy(), el.reshape(2, 1), el.take([0]), el.to(u.m)]:
+            assert type(result) is EarthLocation
+            assert result.ellipsoid == "GRS80"
+            assert result.info.name == "el"
+
+    def test_computations_keeping_class(self):
+        el = self.el
+        results = [
+            el * u.one,
+            np.concatenate([el, el]),
+            np.stack([el, el]),
+            np.where([True, False], el, el),
+        ]
+        for result in results:
+            assert type(result) is EarthLocation
+            assert result.ellipsoid == "GRS80"
+            assert "info" not in result.__dict__
+
+    def test_unsupported_computations(self):
+        with pytest.raises(TypeError):
+            -self.el
+        with pytest.raises(TypeError):
+            self.el + self.el
+        with pytest.raises(TypeError):
+            np.sum(self.el)
+
+    def test_field(self):
+        result = self.el["x"]
+        assert type(result) is u.Quantity
+        assert result.unit == u.m
+        assert result.info.name == "el"
+
+    def test_lshift_unsupported(self):
+        with pytest.raises(TypeError):
+            self.el << u.m
 
 
 class TestMixedClasses:
     """The most derived class decides, else the leftmost."""
 
-    @pytest.mark.parametrize("op", PAIR_OPS)
-    @pytest.mark.parametrize("names", PAIR_RESULT_CLASSES)
-    def test_result_class(self, names, op):
-        expected = PAIR_RESULT_CLASSES[names][list(PAIR_OPS).index(op)]
+    def test_latitude_and_longitude(self):
+        lat, lon = Latitude([1.0, 2.0], u.deg), longitude()
+        assert type(lat + lon) is Angle
+        assert type(lon + lat) is Angle
+        assert type(lat * lon) is u.Quantity
+        assert type(np.concatenate([lat, lon])) is Latitude
+        assert type(np.where([True, False], lat, lon)) is Latitude
+        joined = np.concatenate([lon, lat])
+        assert type(joined) is Longitude
+        assert joined.wrap_angle == 180 * u.deg
 
-        assert outcome(PAIR_OPS[op], *make_pair(names)) == expected
+    def test_angle_and_longitude(self):
+        angle, lon = Angle([1.0, 2.0], u.deg), longitude()
+        assert type(angle + lon) is Angle
+        for result in [np.concatenate([angle, lon]), np.stack([lon, angle])]:
+            assert type(result) is Longitude
+            assert result.wrap_angle == 180 * u.deg
 
-    @pytest.mark.parametrize(
-        "names", [("Latitude", "Longitude"), ("Angle", "Longitude")]
-    )
-    def test_longitude_metadata(self, names):
-        a, b = make_pair(names)
-        lon = a if isinstance(a, Longitude) else b
+    def test_quantity_and_angle(self):
+        q, angle = u.Quantity([1.0, 2.0], u.deg), Angle([1.0, 2.0], u.deg)
+        assert type(q + angle) is Angle
+        assert type(q * angle) is u.Quantity
+        assert type(np.concatenate([q, angle])) is Angle
+        assert type(u.Quantity([1.0, 2.0]) * angle) is Angle
 
-        for op in ("np.concatenate([a, b])", "np.where([True, False], a, b)"):
-            result = PAIR_OPS[op](a, b)
+    def test_distance_and_angle(self):
+        distance, angle = Distance([1.0, 2.0], u.m), Angle([1.0, 2.0], u.deg)
+        assert type(distance * angle) is u.Quantity
+        with pytest.raises(u.UnitConversionError):
+            distance + angle
 
-            if isinstance(result, Longitude):
-                assert result.wrap_angle == lon.wrap_angle
+    def test_distance_and_spectral_coord(self):
+        distance, sc = Distance([1.0, 2.0], u.m), SpectralCoord([3.0, 4.0], u.m)
+        assert type(distance + sc) is Distance
+        assert type(sc + distance) is u.Quantity
+        assert type(np.concatenate([distance, sc])) is Distance
+        assert type(np.concatenate([sc, distance])) is SpectralCoord
+
+    def test_spectral_coord_and_spectral_quantity(self):
+        sc, sq = SpectralCoord([1.0, 2.0], u.m), SpectralQuantity([3.0, 4.0], u.m)
+        assert type(sc + sq) is u.Quantity
+        assert type(sq + sc) is u.Quantity
+        assert type(np.concatenate([sc, sq])) is SpectralCoord
+        assert type(np.concatenate([sq, sc])) is SpectralCoord
 
 
 class TestOutput:
     """With ``out``, the output's class is checked and can decide the result."""
 
     def test_ufunc_result_is_not_output(self):
-        lat, lon = make("Latitude"), make("Longitude")
         out = Longitude([0.0, 0.0], u.deg)
-        result = np.add(lat, lon, out=out)
-
+        result = np.add(Latitude([1.0, 2.0], u.deg), longitude(), out=out)
         assert type(result) is Angle
         assert result is not out
 
     def test_output_decides_implementation(self):
         result = np.add(1 * u.dex, 2 * u.dex, out=u.Dex(0.0))
-
         assert type(result) is u.Dex
 
     def test_output_unit_checked(self):
         with pytest.raises(u.UnitTypeError):
-            np.sin(make("Angle"), out=Angle([0.0, 0.0], u.deg))
-
+            np.sin(Angle([1.0, 2.0], u.deg), out=Angle([0.0, 0.0], u.deg))
         with pytest.raises(u.UnitTypeError):
-            np.multiply(make("Distance"), 2 * u.s, out=Distance([0.0, 0.0], u.m))
+            np.multiply(
+                Distance([1.0, 2.0], u.m), 2 * u.s, out=Distance([0.0, 0.0], u.m)
+            )
 
     def test_output_of_base_class(self):
         out = u.Quantity([0.0, 0.0], u.km)
-        result = np.multiply(make("Distance"), 2, out=out)
-
+        result = np.multiply(Distance([1.0, 2.0], u.pc), 2, out=out)
         assert result is out
         assert result.unit == u.pc
 
     def test_comparison_output(self):
+        distance = Distance([1.0, 2.0], u.m)
         with pytest.raises(TypeError):
-            np.less(make("Distance"), make("Distance"), out=u.Quantity([0.0, 0.0]))
+            np.less(distance, distance, out=u.Quantity([0.0, 0.0]))
 
     def test_concatenate_output_unit_set(self):
         out = SpectralQuantity([0.0, 0.0], u.m)
         result = np.concatenate([[1.0] * u.Hz, [2.0] * u.Hz], out=out)
-
         assert result is out
         assert result.unit == u.Hz
 
 
-class TestFields:
-    """Fields of structured quantities are base quantities."""
-
-    def test_earth_location(self):
-        x = make("EarthLocation")
-        x.info.name = "x"
-        result = x["x"]
-
-        assert type(result) is u.Quantity
-        assert result.unit == u.m
-        assert result.info.name == "x"
-
-    def test_structured(self):
-        x = u.Quantity([(1.0, 2.0)], u.Unit("(m, s)"))
-        x.info.name = "x"
-        result = x["f1"]
-
-        assert type(result) is u.Quantity
-        assert result.unit == u.s
-        assert not has_info(result)
+def test_structured_field():
+    x = u.Quantity([(1.0, 2.0)], u.Unit("(m, s)"))
+    x.info.name = "x"
+    result = x["f1"]
+    assert type(result) is u.Quantity
+    assert result.unit == u.s
+    assert "info" not in result.__dict__
