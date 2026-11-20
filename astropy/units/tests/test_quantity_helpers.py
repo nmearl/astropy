@@ -8,6 +8,9 @@ import pytest
 
 from astropy import units as u
 
+# Tests of numpy-specific behavior, for the compatibility layer.
+pytestmark = pytest.mark.numpy_compat
+
 
 @pytest.mark.parametrize(
     ("a", "b"),

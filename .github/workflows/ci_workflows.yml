@@ -107,6 +107,12 @@ jobs:
           cache-path: .tox
           cache-key: alldeps-linux-${{ github.ref_name }}
 
+        - name: Python 3.14 with array back-ends other than numpy
+          linux: py314-test-arrayapi
+          posargs: -n=4
+          cache-path: .tox
+          cache-key: arrayapi-${{ github.ref_name }}
+
         - name: Python 3.12 with oldest supported version of all dependencies
           linux: py312-test-oldestdeps-alldeps-cov-clocale
           posargs: --remote-data=astropy

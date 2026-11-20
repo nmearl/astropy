@@ -1,7 +1,6 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 """Tests of the Array API quantity and its namespace, for all back-ends."""
 
-import importlib.util
 import pickle
 
 import array_api_compat
@@ -20,43 +19,6 @@ from astropy.units.quantity_helper.namespace import (
 from astropy.units.quantity_helper.rules import PASSTHROUGH
 from astropy.utils.compat.array_api import array_namespace
 from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
-
-BACKENDS = [
-    "numpy",
-    pytest.param(
-        "array_api_strict",
-        marks=pytest.mark.skipif(
-            not HAS_ARRAY_API_STRICT, reason="array-api-strict not installed"
-        ),
-    ),
-    pytest.param(
-        "jax",
-        marks=pytest.mark.skipif(
-            importlib.util.find_spec("jax") is None, reason="jax not installed"
-        ),
-    ),
-]
-
-
-@pytest.fixture(params=BACKENDS)
-def xp(request):
-    if request.param == "numpy":
-        yield array_api_compat.numpy
-    elif request.param == "array_api_strict":
-        import array_api_strict
-
-        yield array_api_strict
-    else:
-        import jax
-
-        # Double precision, as for the other back-ends, for these tests only.
-        enabled = jax.config.jax_enable_x64
-        jax.config.update("jax_enable_x64", True)
-
-        try:
-            yield jax.numpy
-        finally:
-            jax.config.update("jax_enable_x64", enabled)
 
 
 @pytest.fixture
@@ -1106,3 +1068,86 @@ class TestEquivalencies:
 
         with pytest.raises(u.UnitTypeError):
             ns.exp(q(xp, 0.0, u.rad))
+
+
+class TestLazyArrays:
+    """Quantities with dask values, including ones with unknown shapes."""
+
+    def setup_method(self):
+        da = pytest.importorskip("dask.array")
+        x = da.from_array(np.array([1.0, -2.0, 3.0]), chunks=2)
+        # Selecting with a mask gives an unknown shape.
+        self.value = x[x > 0]
+
+    def test_operations(self):
+        a = Quantity(self.value, u.m)
+        ns = array_namespace(a)
+
+        assert a.to(u.cm).unit == u.cm
+        assert_allclose(a.to(u.cm).value.compute(), [100.0, 300.0])
+        assert_allclose((a + Quantity(self.value, u.cm)).value.compute(), [1.01, 3.03])
+        assert ns.sum(a).unit == u.m
+        assert_allclose(ns.sum(a).value.compute(), 4.0)
+
+    def test_prod(self):
+        dimensionless = Quantity(self.value, u.one)
+        result = array_namespace(dimensionless).prod(dimensionless)
+
+        assert result.unit == u.one
+        assert_allclose(result.value.compute(), 3.0)
+
+        # The unit of the product depends on the unknown number of elements.
+        a = Quantity(self.value, u.m)
+
+        with pytest.raises(u.UnitsError, match="not known"):
+            array_namespace(a).prod(a)
+
+
+@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
+class TestDevices:
+    """Quantities with array_api_strict values on devices other than the default."""
+
+    def test_results_stay_on_device(self):
+        import array_api_strict
+
+        device = array_api_strict.Device("device1")
+        a = Quantity(array_api_strict.asarray([1.0, 2.0], device=device), u.m)
+        ns = array_namespace(a)
+
+        assert a.device == device
+        assert a.to(u.km).device == device
+        assert (a + a).device == device
+        assert (a * 2).device == device
+        assert ns.sum(a).device == device
+        assert ns.zeros_like(a).device == device
+        assert ns.full_like(a, Quantity(3.0, u.km)).device == device
+
+    def test_to_device(self):
+        import array_api_strict
+
+        device = array_api_strict.Device("device1")
+        a = Quantity(array_api_strict.asarray([1.0, 2.0], device=device), u.m)
+        default = array_api_strict.Device("CPU_DEVICE")
+
+        assert a.to_device(default).device == default
+
+    def test_different_devices(self):
+        import array_api_strict
+
+        device = array_api_strict.Device("device1")
+        a = Quantity(array_api_strict.asarray([1.0, 2.0], device=device), u.m)
+        b = Quantity(array_api_strict.asarray([1.0, 2.0]), u.m)
+
+        with pytest.raises(ValueError, match="different devices"):
+            a + b
+
+    def test_device_without_double_precision(self):
+        import array_api_strict
+
+        device = array_api_strict.Device("no_float64")
+        a = Quantity(array_api_strict.asarray([1, 2], device=device), u.m)
+
+        # Integers become the default floating point type of the device.
+        assert a.dtype == array_api_strict.float32
+        assert a.to(u.km).dtype == array_api_strict.float32
+        assert a.to(u.km).device == device

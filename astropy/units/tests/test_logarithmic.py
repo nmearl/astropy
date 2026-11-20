@@ -13,6 +13,9 @@ from astropy import constants as c
 from astropy import units as u
 from astropy.tests.helper import assert_quantity_allclose
 
+# Function units are only supported for numpy arrays.
+pytestmark = pytest.mark.numpy_compat
+
 lu_units = [u.dex, u.mag, u.decibel]
 
 lu_subclasses = [u.DexUnit, u.MagUnit, u.DecibelUnit]

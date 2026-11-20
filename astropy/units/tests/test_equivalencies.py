@@ -12,7 +12,6 @@ from astropy import constants
 from astropy import units as u
 from astropy.tests.helper import assert_quantity_allclose
 from astropy.units.equivalencies import Equivalency
-from astropy.utils.compat.optional_deps import HAS_ARRAY_API_STRICT
 from astropy.utils.exceptions import AstropyDeprecationWarning
 
 
@@ -1079,11 +1078,8 @@ SCALAR_FACTOR_CONVERSIONS = [
 ]
 
 
-@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
 @pytest.mark.parametrize("equivalency, unit1, unit2", SCALAR_FACTOR_CONVERSIONS)
-def test_scalar_factor_conversions_keep_array_type(equivalency, unit1, unit2):
-    import array_api_strict as xp
-
+def test_scalar_factor_conversions_keep_array_type(xp, equivalency, unit1, unit2):
     values = [1.0, 2.0]
     for a, b in [(unit1, unit2), (unit2, unit1)]:
         result = a.to(b, xp.asarray(values), equivalencies=equivalency)
@@ -1109,11 +1105,8 @@ ARRAY_FUNCTION_CONVERSIONS = [
 ]
 
 
-@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
 @pytest.mark.parametrize("equivalency, unit1, unit2", ARRAY_FUNCTION_CONVERSIONS)
-def test_array_function_conversions_keep_array_type(equivalency, unit1, unit2):
-    import array_api_strict as xp
-
+def test_array_function_conversions_keep_array_type(xp, equivalency, unit1, unit2):
     values = [0.5, 2.0]
     for a, b in [(unit1, unit2), (unit2, unit1)]:
         result = a.to(b, xp.asarray(values), equivalencies=equivalency)
@@ -1130,10 +1123,9 @@ def test_parallax_scalar(value):
     assert_allclose(result, 500.0 if value > 0 else np.nan)
 
 
-@pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="tests array_api_strict")
-def test_parallax_negative_array_api_strict():
-    import array_api_strict as xp
-
+def test_parallax_negative_array(xp):
+    # The converter must not assign in place, which immutable arrays (e.g.,
+    # JAX) do not support.
     result = u.mas.to(u.pc, xp.asarray([2.0, -2.0]), equivalencies=u.parallax())
     assert isinstance(result, xp.asarray(0.0).__class__)
     assert_allclose(np.asarray(result), [500.0, np.nan])
@@ -1147,13 +1139,3 @@ def test_parallax_masked():
     assert isinstance(result, Masked)
     assert_allclose(result.unmasked, [500.0, np.nan, 250.0])
     assert_array_equal(result.mask, [False, False, True])
-
-
-def test_parallax_immutable_array():
-    # The converter must not assign in place, which immutable arrays (e.g.,
-    # JAX) do not support.
-    jnp = pytest.importorskip("jax.numpy")
-
-    result = u.mas.to(u.pc, jnp.asarray([2.0, -2.0]), equivalencies=u.parallax())
-    assert isinstance(result, jnp.ndarray)
-    assert_allclose(np.asarray(result), [500.0, np.nan], rtol=1e-6)
