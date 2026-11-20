@@ -163,7 +163,9 @@ class Quantity:
 
     def __jax_array__(self):
         # Quantities cannot be converted to JAX arrays, see open issue.
-        return NotImplemented
+        # Returns the quantity itself to make JAX operators defer to it;
+        # leaves conversion to __array__, which raises unless dimensionless.
+        return self
 
     @property
     def dtype(self):
