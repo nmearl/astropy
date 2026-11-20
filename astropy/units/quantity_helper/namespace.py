@@ -335,8 +335,9 @@ class QuantityNamespace:
             _is_quantity_unit(u1)
             and isinstance(x2, numbers.Real)
             and not isinstance(x2, bool)
+            and math.isfinite(x2)
         ):
-            # A Python exponent, so the result unit is known.
+            # A finite Python exponent, so the result unit is known.
             (_,), unit = plan(static_power, (u1,), (("exponent", x2),))
             exponent = int(x2) if isinstance(x2, numbers.Integral) else float(x2)
 

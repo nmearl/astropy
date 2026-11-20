@@ -246,7 +246,7 @@ def array_power(unit1, unit2, name="pow"):
     except UnitTypeError:
         raise UnitTypeError(
             "Raising a quantity with units to an array power requires the "
-            "exponent to be a Python number (so that the resulting unit is "
+            "exponent to be a finite Python number (so that the resulting unit is "
             f"known without inspecting values); got base unit '{unit1}'."
         ) from None
 
