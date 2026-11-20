@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import functools
 import numbers
 
 import array_api_compat
@@ -14,7 +13,6 @@ from astropy.units.core import (
     Unit,
     UnitBase,
     dimensionless_unscaled,
-    get_current_unit_registry,
 )
 from astropy.units.errors import UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
@@ -48,29 +46,6 @@ def _is_operand(x):
     return isinstance(
         x, (Quantity, _LegacyQuantity, numbers.Number)
     ) or array_api_compat.is_array_api_obj(x)
-
-
-def _flatten(q):
-    """The value of ``q`` as the only pytree leaf, and its static data."""
-    # Enabled equivalencies are static data too, so that functions compiled
-    # by jax.jit are traced again if they change.
-    equivalencies = frozenset(get_current_unit_registry()._equivalencies)
-
-    return (q._value,), (q._unit, equivalencies)
-
-
-@functools.cache
-def _register_jax(cls):
-    """Register ``cls`` as a JAX pytree.
-
-    The value is the only leaf, and the unit is static data, so that units are
-    handled while JAX traces a function and never in compiled code.
-    """
-    import jax
-
-    jax.tree_util.register_pytree_node(
-        cls, _flatten, lambda static, leaves: cls._new(leaves[0], static[0])
-    )
 
 
 def _binary_op(op_name, name, reflected=False):
@@ -156,9 +131,6 @@ class Quantity:
         self._value = value
         self._unit = unit
 
-        if array_api_compat.is_jax_namespace(xp):
-            _register_jax(type(self))
-
     @classmethod
     def _new(cls, value, unit):
         """Create a quantity from an array and a unit, without any checks.
@@ -188,6 +160,12 @@ class Quantity:
 
     def __array_namespace__(self, *, api_version=None):
         return _namespace.namespace_for(self._value, api_version)
+
+    def __jax_array__(self):
+        # Quantities cannot be converted to JAX arrays, see open issue.
+        # Returns the quantity itself to make JAX operators defer to it;
+        # leaves conversion to __array__, which raises unless dimensionless.
+        return self
 
     @property
     def dtype(self):
