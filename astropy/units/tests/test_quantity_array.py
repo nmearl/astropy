@@ -1060,14 +1060,13 @@ def test_handled_names_resolve(xp, ns):
 
 
 def _generic(x, mask_values):
-    """Code written against the standard only, with no knowledge of units."""
     xp = array_namespace(x)
     mask = xp.asarray(mask_values)
-    centred = x - xp.mean(x)
-    spread = xp.sqrt(xp.sum(centred**2) / x.shape[0])
+    centered = x - xp.mean(x)
+    spread = xp.sqrt(xp.sum(centered**2) / x.shape[0])
     grid = xp.linspace(xp.min(x), xp.max(x), 3)
 
-    return xp.where(mask, centred, xp.zeros_like(x)), spread, grid
+    return xp.where(mask, centered, xp.zeros_like(x)), spread, grid
 
 
 class TestGenericCode:

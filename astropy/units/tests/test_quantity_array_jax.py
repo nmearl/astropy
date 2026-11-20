@@ -154,14 +154,14 @@ class TestQuantitiesInside:
 
     def test_generic_code(self):
         @jax.jit
-        def centred(x):
+        def centered(x):
             x = Quantity(x, u.km)
             xp = array_namespace(x)
-            centred = xp.where(x > xp.mean(x), x - xp.mean(x), xp.zeros_like(x))
+            centered = xp.where(x > xp.mean(x), x - xp.mean(x), xp.zeros_like(x))
 
-            return centred.to_value(u.m)
+            return centered.to_value(u.m)
 
-        result = centred(jnp.asarray([1.0, 2.0, 3.0]))
+        result = centered(jnp.asarray([1.0, 2.0, 3.0]))
 
         assert_allclose(np.asarray(result), [0.0, 0.0, 1000.0])
 
