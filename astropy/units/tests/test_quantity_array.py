@@ -1158,6 +1158,15 @@ class TestSubclasses:
         assert type(b + c) is Tagged
         assert type(c + b) is Length
 
+    def test_info(self, xp):
+        a = q(xp, [1.0, 2.0, 3.0], u.m)
+        a.info.name = "distance"
+
+        # Kept for slices and conversions, but not for calculations.
+        assert a[:2].info.name == "distance"
+        assert a.to(u.cm).info.name == "distance"
+        assert (a * 2).info.name is None
+
 
 class TestEquivalencies:
     def test_enabled_equivalencies(self, xp, ns):

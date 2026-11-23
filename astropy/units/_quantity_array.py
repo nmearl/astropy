@@ -16,7 +16,7 @@ from astropy.units.core import (
 )
 from astropy.units.errors import UnitConversionError, UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
-from astropy.units.quantity import _upcast_int_to_float
+from astropy.units.quantity import QuantityInfo, _upcast_int_to_float
 from astropy.units.quantity_helper import namespace as _namespace
 from astropy.units.quantity_helper import numpy_compat as _numpy_compat
 from astropy.units.quantity_helper.converters import can_have_arbitrary_unit
@@ -122,7 +122,10 @@ class Quantity:
     a new quantity.
     """
 
-    __slots__ = ("_unit", "_value")
+    # A __dict__ for info and attributes of subclasses, and __weakref__ for info.
+    __slots__ = ("__dict__", "__weakref__", "_unit", "_value")
+
+    info = QuantityInfo()
 
     # Quantities are mutable, and == gives an array.
     __hash__ = None
@@ -206,7 +209,7 @@ class Quantity:
         a longitude).
         """
 
-    def _new_like(self, value, unit=None):
+    def _new_like(self, value, unit=None, *, propagate_info=False):
         """A result with ``value`` and ``unit``, created from this quantity.
 
         The class is that of this quantity if it can hold ``unit``, as given by
@@ -220,6 +223,9 @@ class Quantity:
         unit : unit, optional
             The unit of the result. By default, the unit of this quantity, in
             which case the class is also that of this quantity.
+        propagate_info : bool, optional
+            Whether to copy ``info``, as appropriate for, e.g., slices and
+            unit conversions, but not for results of calculations.
         """
         if unit is None:
             unit = self._unit
@@ -234,6 +240,9 @@ class Quantity:
 
         result = cls._new(value, unit)
         result._copy_metadata(self)
+
+        if propagate_info and "info" in self.__dict__:
+            result.info = self.info
 
         return result
 
@@ -290,18 +299,18 @@ class Quantity:
             A stream for the transfer, for array libraries that support it.
         """
         value = array_api_compat.to_device(self._value, device, stream=stream)
-        return self._new_like(value)
+        return self._new_like(value, propagate_info=True)
 
     @property
     def T(self):
-        return self._new_like(self._value.T)
+        return self._new_like(self._value.T, propagate_info=True)
 
     @property
     def mT(self):
         return self.__array_namespace__().matrix_transpose(self)
 
     def __getitem__(self, key):
-        return self._new_like(self._value[key])
+        return self._new_like(self._value[key], propagate_info=True)
 
     def __setitem__(self, key, value):
         self._value[key] = self._to_own_unit(value)
@@ -499,7 +508,7 @@ class Quantity:
         if copy and value is self._value:
             value = array_namespace(value).asarray(value, copy=True)
 
-        return self._new_like(value, unit)
+        return self._new_like(value, unit, propagate_info=True)
 
     def to_value(self, unit=None, equivalencies=[]):
         """The numerical value, possibly in a different unit.
@@ -570,7 +579,7 @@ class Quantity:
 
         unit = CompositeUnit(1, unit.bases, unit.powers, _error_check=False)
 
-        return self._new_like(value, unit)
+        return self._new_like(value, unit, propagate_info=True)
 
     def __str__(self):
         unit = self._unit.to_string()
