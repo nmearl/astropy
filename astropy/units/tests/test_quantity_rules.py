@@ -171,7 +171,7 @@ def test_array_power():
     with pytest.raises(u.UnitTypeError, match="Python number"):
         rules.array_power(u.m, None)
 
-    with pytest.raises(u.UnitTypeError, match="exponent of 'pow' must be"):
+    with pytest.raises(u.UnitTypeError, match="raise something to a dimensionless"):
         rules.array_power(None, u.m)
 
 
