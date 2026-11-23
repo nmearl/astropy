@@ -13,14 +13,19 @@ from astropy.units.core import dimensionless_unscaled
 from astropy.units.errors import UnitConversionError
 from astropy.units.quantity import Quantity as _LegacyQuantity
 
-from .converters import can_have_arbitrary_unit, check_output, converters_and_unit
+from .converters import (
+    can_have_arbitrary_unit,
+    check_output,
+    check_partial_output,
+    converters_and_unit,
+    writes_partially,
+)
 from .namespace import _is_quantity_unit, _wrap, apply_converter, split
 from .rules import (
     ARBITRARY,
     BINARY_RULES,
     UNARY_RULES,
     array_power,
-    converter,
     plan,
     static_power,
 )
@@ -63,7 +68,7 @@ def _converters_and_unit(function, method, inputs):
 
     if not any(map(_is_quantity_unit, units)):
         # Only an output is a quantity; inputs are taken to be dimensionless.
-        units = tuple(dimensionless_unscaled if u is None else u for u in units)
+        units = (dimensionless_unscaled,) * len(units)
 
     if name == "pow":
         exponent = inputs[1]
@@ -155,11 +160,12 @@ def _result(result, unit, output, inputs):
 
 
 def _defers(x):
-    """Whether ``x`` has an override that numpy can try instead."""
+    """Whether ``x`` has an override that numpy should try instead."""
     return getattr(type(x), "__array_ufunc__", None) not in (
         None,
         np.ndarray.__array_ufunc__,
         _quantity_array.Quantity.__array_ufunc__,
+        _LegacyQuantity.__array_ufunc__,
     )
 
 
@@ -180,37 +186,35 @@ def array_ufunc(function, method, *inputs, **kwargs):
                 "arrays as values; use the namespace of the quantity instead."
             )
 
-    if isinstance(kwargs.get("where"), _quantity_array.Quantity):
-        # The mask should be a plain boolean array.
+    if isinstance(kwargs.get("where"), _quantity_array.Quantity) or any(
+        map(_defers, (*inputs, *(outputs or ())))
+    ):
+        # Let other overrides handle their own types; the mask should be a
+        # plain boolean array.
         return NotImplemented
 
-    try:
-        converters, unit = _converters_and_unit(function, method, inputs)
-        units = unit if function.nout > 1 else (unit,)
+    converters, unit = _converters_and_unit(function, method, inputs)
+    units = unit if function.nout > 1 else (unit,)
 
-        if outputs is not None:
-            kwargs["out"] = tuple(
-                _output_value(output, unit_, inputs, function)
-                for output, unit_ in zip(outputs, units)
-            )
+    if outputs is not None:
+        if writes_partially(method, kwargs):
+            for output, unit_ in zip(outputs, units):
+                check_partial_output(output, unit_, function)
 
-        if method == "reduce" and "initial" in kwargs and unit is not None:
-            value, initial_unit = split(kwargs["initial"])
-            kwargs["initial"] = apply_converter(
-                value, converter(initial_unit, unit, function.__name__)
-            )
+        kwargs["out"] = tuple(
+            _output_value(output, unit_, inputs, function)
+            for output, unit_ in zip(outputs, units)
+        )
 
-        values = [
-            apply_converter(split(x)[0], conv)
-            for x, conv in zip(inputs, converters, strict=False)
-        ]
-        values += [split(x)[0] for x in inputs[len(values) :]]
-        result = getattr(function, method)(*values, **kwargs)
-    except (TypeError, ValueError, AttributeError):
-        if any(map(_defers, (*inputs, *(outputs or ())))):
-            return NotImplemented
+    if method == "reduce" and "initial" in kwargs and unit is not None:
+        kwargs["initial"] = _quantity_array._to_unit(kwargs["initial"], unit)
 
-        raise
+    values = [
+        apply_converter(split(x)[0], conv)
+        for x, conv in zip(inputs, converters, strict=False)
+    ]
+    values += [split(x)[0] for x in inputs[len(values) :]]
+    result = getattr(function, method)(*values, **kwargs)
 
     if result is None or result is NotImplemented:
         # Method 'at', or another override could not handle the inputs.

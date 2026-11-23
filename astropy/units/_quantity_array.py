@@ -14,11 +14,12 @@ from astropy.units.core import (
     UnitBase,
     dimensionless_unscaled,
 )
-from astropy.units.errors import UnitsError
+from astropy.units.errors import UnitConversionError, UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
 from astropy.units.quantity import _upcast_int_to_float
 from astropy.units.quantity_helper import namespace as _namespace
 from astropy.units.quantity_helper import numpy_compat as _numpy_compat
+from astropy.units.quantity_helper.converters import can_have_arbitrary_unit
 from astropy.units.quantity_helper.rules import converter
 from astropy.utils.compat.array_api import array_namespace, default_floating_dtype
 
@@ -40,6 +41,32 @@ def _as_unit(unit):
         )
 
     return unit
+
+
+def _to_unit(value, unit):
+    """The value of ``value`` in ``unit``, for storing in a quantity with that unit."""
+    value, value_unit = _namespace.split(value)
+
+    try:
+        conv = converter(value_unit, unit, "setitem")
+    except UnitConversionError:
+        if value_unit is not None or (
+            array_api_compat.is_array_api_obj(value)
+            and not array_api_compat.is_numpy_array(value)
+        ):
+            raise
+
+        try:
+            arbitrary = can_have_arbitrary_unit(value)
+        except TypeError:
+            arbitrary = False
+
+        if not arbitrary:
+            raise
+
+        conv = None
+
+    return _namespace.apply_converter(value, conv)
 
 
 def _is_operand(x):
@@ -107,7 +134,7 @@ class Quantity:
 
             value, unit = value._value, value._unit
         elif isinstance(value, _LegacyQuantity):
-            unit = value.unit if unit is None else _as_unit(unit)
+            unit = _as_unit(value.unit if unit is None else unit)
             value = value.to_value(unit)
         else:
             unit = dimensionless_unscaled if unit is None else _as_unit(unit)
@@ -213,24 +240,37 @@ class Quantity:
         return self._new(self._value[key], self._unit)
 
     def __setitem__(self, key, value):
-        value, unit = _namespace.split(value)
-        conv = converter(unit, self._unit, "setitem")
-        value = _namespace.apply_converter(value, conv)
+        self._value[key] = self._to_own_unit(value)
+
+    def _to_own_unit(self, value, check_precision=True, *, unit=None):
+        """Convert ``value`` to the unit of the quantity (or ``unit``), for storing.
+
+        Parameters
+        ----------
+        value : quantity-like
+            The value to convert. Non-quantities are dimensionless, except that
+            numpy arrays and Python numbers that are all 0, inf or nan can have
+            any unit.
+        check_precision : bool, optional
+            Whether to raise if the value cannot be stored in an integer
+            quantity without changing it. Default: `True`.
+        unit : unit, optional
+            The unit to convert to. By default, the unit of the quantity.
+        """
+        value = _to_unit(value, self._unit if unit is None else unit)
         xp = array_namespace(self._value)
 
-        if xp.isdtype(self.dtype, "integral"):
-            # Allow values that are exactly integers, but not ones that would
-            # be truncated (e.g. 50 cm into an integer array in m).
+        if check_precision and xp.isdtype(self.dtype, "integral"):
             value = xp.asarray(value)
 
-            if not xp.isdtype(value.dtype, ("integral", "bool")) and not bool(
+            if not xp.can_cast(value.dtype, self.dtype) and not bool(
                 xp.all(xp.astype(value, self.dtype) == value)
             ):
                 raise TypeError(
                     "cannot convert value type to array type without precision loss"
                 )
 
-        self._value[key] = value
+        return value
 
     def __len__(self):
         if self.ndim == 0:

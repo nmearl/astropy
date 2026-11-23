@@ -116,6 +116,10 @@ class TestUfuncsWithoutRules:
 
         assert result.value == 7.0
 
+        result = np.add.reduce(a, initial=np.float64(0.0))
+
+        assert result.value == 6.0
+
         result = np.add.accumulate(a)
 
         assert result.unit is u.m
@@ -131,6 +135,21 @@ class TestUfuncsWithoutRules:
 
         assert a.unit is u.m
         assert_array_equal(a.value, [1.5, 2.0, 3.5])
+
+    def test_at_checks_units(self):
+        a = np.ones(2)
+
+        with pytest.raises(u.UnitTypeError, match="non-Quantity"):
+            np.multiply.at(a, [0], Quantity(3.0, u.m))
+
+        assert_array_equal(a, [1.0, 1.0])
+
+        b = Quantity([1.0, 2.0], u.m)
+
+        with pytest.raises(u.UnitTypeError, match="indices"):
+            np.add.at(b, Quantity([0], u.s, dtype=None), Quantity(1.0, u.m))
+
+        assert_array_equal(b.value, [1.0, 2.0])
 
 
 class TestOutput:
@@ -153,6 +172,39 @@ class TestOutput:
         assert result is out
         assert out.unit is u.dimensionless_unscaled
         assert_array_equal(out.value, [1.0, 2.0])
+
+        # Also numbers that could have any unit.
+        out = Quantity(1.0, u.m)
+
+        np.absolute(0, out=out)
+
+        assert out.unit is u.dimensionless_unscaled
+        assert out.value == 0.0
+
+    def test_where(self):
+        a = Quantity([1.0, 2.0], u.m)
+        out = Quantity([10.0, 20.0], u.m)
+
+        np.add(a, a, out=out, where=[True, False])
+
+        assert_array_equal(out.value, [2.0, 20.0])
+
+        # Elements not written would change unit.
+        out = Quantity([10.0, 20.0], u.cm)
+
+        with pytest.raises(u.UnitsError, match="'where' is given"):
+            np.add(a, a, out=out, where=[True, False])
+
+        assert out.unit is u.cm
+        assert_array_equal(out.value, [10.0, 20.0])
+
+        # For reductions, 'where' selects the inputs; the output is written.
+        out = Quantity(0.0, u.s)
+
+        np.add.reduce(a, where=[True, False], out=out)
+
+        assert out.unit is u.m
+        assert out.value == 1.0
 
     def test_two_outputs(self):
         out = (Quantity(np.zeros(2), u.m), Quantity(np.zeros(2), u.m))
@@ -211,6 +263,13 @@ class TestResultClass:
         assert type(b * a) is Quantity
         assert type(u.s * a) is Quantity
         assert type(u.s / a) is Quantity
+
+    def test_numpy_quantity_class_with_other_units(self):
+        with pytest.raises(u.UnitConversionError):
+            np.add(Quantity(1.0, u.m), u.Quantity(1.0, u.s))
+
+        with pytest.raises(u.UnitConversionError):
+            np.add(u.Quantity(1.0, u.s), Quantity(1.0, u.m))
 
 
 @pytest.mark.skipif(not HAS_ARRAY_API_STRICT, reason="array-api-strict not installed")

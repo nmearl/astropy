@@ -1160,6 +1160,14 @@ class TestWhere:
         assert result is out
         assert_array_equal(result, [1000.0, 1001.0, 1002.0, 0.0] << u.m)
 
+    def test_where_with_output_in_other_unit(self):
+        # Elements not written would change unit.
+        q = np.arange(4.0) << u.m
+        out = np.ones(4) << u.cm
+        with pytest.raises(u.UnitsError, match="'where' is given"):
+            np.add(q, q, out=out, where=[True, True, True, False])
+        assert_array_equal(out, np.ones(4) << u.cm)
+
     def test_exception_with_where_quantity(self):
         a = np.ones(2)
         where = np.ones(2, bool) << u.m
@@ -1369,6 +1377,22 @@ class TestUfuncAt:
         # of course cannot change class of data either
         with pytest.raises(TypeError):
             np.greater.at(s, i, 1.0 * u.km)
+
+    def test_two_argument_ufunc_at_plain_array(self):
+        a = np.arange(10.0)
+        i = np.array([1, 2])
+        with pytest.raises(u.UnitTypeError, match="non-Quantity"):
+            np.multiply.at(a, i, 2.0 * u.m)
+        assert_array_equal(a, np.arange(10.0))
+
+        np.multiply.at(a, i, 2.0 * u.dimensionless_unscaled)
+        assert_array_equal(a, [0.0, 2.0, 4.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+
+    def test_ufunc_at_indices_with_unit(self):
+        s = np.arange(10.0) * u.m
+        with pytest.raises(u.UnitTypeError, match="indices"):
+            np.add.at(s, [1, 2] * u.s, 1.0 * u.m)
+        assert_array_equal(s, np.arange(10.0) * u.m)
 
 
 class TestUfuncReduceReduceatAccumulate:

@@ -107,9 +107,15 @@ class TestConstruction:
 
         assert np.shares_memory(result.value, value)
 
-    def test_function_units_are_not_supported(self):
+    def test_function_and_structured_units_are_not_supported(self):
         with pytest.raises(NotImplementedError):
             Quantity(1.0, u.dex(u.cm / u.s**2))
+
+        with pytest.raises(NotImplementedError):
+            Quantity(u.Quantity((1.0, 2.0), u.Unit("(m, s)")))
+
+        with pytest.raises(NotImplementedError):
+            Quantity(u.Dex(1.0, u.dex(u.cm / u.s**2)))
 
     def test_array_backends(self, xp):
         value = xp.asarray([1, 2])
@@ -208,6 +214,40 @@ class TestSetitem:
             a[0] = Quantity(50.0, u.cm)
 
         assert_array_equal(a.value, [3, 4])
+
+    def test_integer_precision_of_wider_integers(self):
+        a = Quantity([1, 2], u.m, dtype=np.int8)
+        a[0] = Quantity(3, u.m, dtype=np.int64)
+
+        assert_array_equal(a.value, [3, 2])
+
+        with pytest.raises(TypeError, match="precision loss"):
+            a[0] = Quantity(300, u.m, dtype=np.int64)
+
+        assert_array_equal(a.value, [3, 2])
+
+    def test_numbers_that_can_have_any_unit(self):
+        # As for numpy functions, numpy arrays of 0, inf or nan can be stored
+        # in quantities with any unit.
+        a = Quantity([1.0, 2.0, 3.0], u.m)
+        a[:] = np.array([0.0, np.inf, np.nan])
+
+        assert_array_equal(a.value, [0.0, np.inf, np.nan])
+
+        with pytest.raises(u.UnitConversionError):
+            a[:] = np.array([0.0, 1.0, 2.0])
+
+    @pytest.mark.skipif(
+        not HAS_ARRAY_API_STRICT, reason="array-api-strict not installed"
+    )
+    def test_other_arrays_have_no_arbitrary_unit(self):
+        # Values of other array types are not inspected.
+        import array_api_strict as xp
+
+        a = q(xp, [1.0, 2.0], u.m)
+
+        with pytest.raises(u.UnitConversionError):
+            a[:] = xp.zeros(2)
 
     def test_mutability_follows_backend(self, xp):
         a = q(xp, [1.0, 2.0], u.km)

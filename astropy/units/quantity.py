@@ -25,6 +25,7 @@ from .core import Unit, UnitBase, dimensionless_unscaled, get_current_unit_regis
 from .errors import UnitConversionError, UnitsError, UnitTypeError
 from .format import Base, Latex
 from .quantity_helper import can_have_arbitrary_unit, check_output, converters_and_unit
+from .quantity_helper.converters import check_partial_output, writes_partially
 from .quantity_helper.function_helpers import (
     DISPATCHED_FUNCTIONS,
     FUNCTION_HELPERS,
@@ -721,6 +722,10 @@ class Quantity(np.ndarray):
             out = kwargs.get("out")
             # Avoid loop back by turning any Quantity output into array views.
             if out is not None:
+                if writes_partially(method, kwargs):
+                    # Elements not written should keep their unit.
+                    for out_, unit_ in zip(out, unit if function.nout > 1 else (unit,)):
+                        check_partial_output(out_, unit_, function)
                 # If pre-allocated output is used, check it is suitable.
                 # This also returns array view, to ensure we don't loop back.
                 if function.nout == 1:
