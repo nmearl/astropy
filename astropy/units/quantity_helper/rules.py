@@ -113,6 +113,13 @@ def _require(unit, target, name, kind):
 # ======================================================================================
 # Rules for functions with one argument.
 # ======================================================================================
+def _power(unit, p):
+    """``unit`` to the power ``p``; any power of dimensionless_unscaled is itself."""
+    unit = _unit_or_dimensionless(unit)
+
+    return unit if unit is dimensionless_unscaled else unit**p
+
+
 def invariant(unit, name=""):
     """f(x) has the unit of x."""
     return (None,), unit
@@ -142,7 +149,7 @@ def power_of(p):
     """f(x) has the unit of x to the power ``p``."""
 
     def rule(unit, name=""):
-        return (None,), _unit_or_dimensionless(unit) ** p
+        return (None,), _power(unit, p)
 
     rule.__name__ = f"power_of({p})"
 
@@ -151,7 +158,7 @@ def power_of(p):
 
 def static_power(unit, *, exponent):
     """x ** p for a Python number p, so the result unit is known."""
-    return (None,), _unit_or_dimensionless(unit) ** exponent
+    return (None,), _power(unit, exponent)
 
 
 def prod_rule(unit, *, n):
@@ -254,7 +261,8 @@ def array_power(unit1, unit2, name="pow"):
         conv2 = _require(unit2, dimensionless_unscaled, name, kind)
     except UnitTypeError:
         raise UnitTypeError(
-            f"The exponent of '{name}' must be dimensionless (got unit '{unit2}')."
+            "Can only raise something to a dimensionless quantity (got exponent "
+            f"unit '{unit2}')."
         ) from None
 
     return (conv1, conv2), dimensionless_unscaled
