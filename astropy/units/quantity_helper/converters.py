@@ -235,6 +235,15 @@ def converters_and_unit(function, method, *args):
     else:  # methods for which the unit should stay the same
         nin = function.nin
         unit = getattr(args[0], "unit", None)
+
+        if method in {"at", "reduceat"}:
+            index_unit = getattr(args[1], "unit", None)
+            if index_unit is not None and not index_unit.is_unity():
+                raise UnitTypeError(
+                    f"Cannot use '{method}' method on ufunc {function.__name__} "
+                    f"with indices that have a unit (got '{index_unit}')."
+                )
+
         if method == "at" and nin <= 2:
             if nin == 1:
                 units = [unit]
@@ -263,6 +272,18 @@ def converters_and_unit(function, method, *args):
             )
 
         # for all but __call__ method, scaling is not allowed
+        if (
+            unit is None
+            and result_unit is not None
+            and result_unit is not dimensionless_unscaled
+            and not result_unit.is_unity()
+        ):
+            raise UnitTypeError(
+                f"Cannot use '{method}' method on ufunc {function.__name__} with "
+                "a non-Quantity instance as the result would have unit "
+                f"'{result_unit}'."
+            )
+
         if unit is not None and result_unit is None:
             raise TypeError(
                 f"Cannot use '{method}' method on ufunc {function.__name__} with a "
@@ -283,6 +304,42 @@ def converters_and_unit(function, method, *args):
             )
 
     return converters, result_unit
+
+
+def writes_partially(method, kwargs):
+    """Whether a ufunc call may leave elements of its output unwritten."""
+    where = kwargs.get("where", True)
+
+    if method != "__call__" or hasattr(where, "unit"):
+        # For reductions, 'where' selects the inputs, so the output is fully
+        # written. Masks with a unit are rejected by numpy itself.
+        return False
+
+    return not np.all(where)
+
+
+def check_partial_output(output, unit, function=None):
+    """Check that writing only part of ``output`` keeps its unit.
+
+    If a ufunc is given ``where``, elements of ``output`` that are not written
+    keep their value, so their unit cannot change.
+
+    Raises
+    ------
+    UnitsError : If the unit of ``output`` differs from ``unit``.
+    """
+    output_unit = getattr(output, "unit", None)
+
+    if output_unit is not None and unit is not None and output_unit != unit:
+        raise UnitsError(
+            "Cannot store output with unit '{}'{} in an output with unit '{}' "
+            "when 'where' is given, since the elements not written would change "
+            "unit.".format(
+                unit,
+                f" from {function.__name__} function" if function is not None else "",
+                output_unit,
+            )
+        )
 
 
 def check_output(output, unit, inputs, function=None):
