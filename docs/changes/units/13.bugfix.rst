@@ -1,0 +1,4 @@
+Ufuncs on ``Quantity`` given ``where`` now raise if the output has a different
+unit than the result, since the elements not written would otherwise silently
+change unit. The ``at`` method of ufuncs now raises if the result would have a
+unit but is stored in a plain array, or if the indices have a unit.
