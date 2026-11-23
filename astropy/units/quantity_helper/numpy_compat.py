@@ -17,6 +17,7 @@ from .converters import (
     can_have_arbitrary_unit,
     check_output,
     check_partial_output,
+    check_quantity_output,
     converters_and_unit,
     writes_partially,
 )
@@ -113,11 +114,7 @@ def _output_value(output, unit, inputs, function):
     if not isinstance(output, _quantity_array.Quantity):
         return check_output(output, unit, inputs, function)
 
-    if unit is None:
-        raise TypeError(
-            f"Cannot store non-quantity output from {function.__name__} function "
-            f"in {type(output)} instance"
-        )
+    check_quantity_output(output, unit, function)
 
     if not isinstance(output._value, np.ndarray):
         raise TypeError(
@@ -152,7 +149,7 @@ def _result(result, unit, output, inputs):
         return _wrap(result, unit, inputs)
 
     if isinstance(output, _quantity_array.Quantity):
-        output._unit = unit
+        output._set_unit(unit)
     elif isinstance(output, _LegacyQuantity) and unit is not None:
         output._set_unit(unit)
 
