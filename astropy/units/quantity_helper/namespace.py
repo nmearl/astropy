@@ -58,16 +58,35 @@ def _is_quantity_unit(unit):
     return unit is not None and unit is not ARBITRARY
 
 
+def _source(args):
+    """The quantity among ``args`` that results are created from.
+
+    As for numpy overrides, this is the first quantity, unless a later one is
+    an instance of a subclass of its class.
+    """
+    source = None
+
+    for arg in args:
+        if isinstance(arg, _quantity_array.Quantity) and (
+            source is None
+            or (type(arg) is not type(source) and isinstance(arg, type(source)))
+        ):
+            source = arg
+
+    return source
+
+
 def _wrap(result, unit, args=()):
-    """Attach ``unit`` to ``result``, as a result created from the first quantity."""
+    """Attach ``unit`` to ``result``, as a result created from ``args``."""
     if not _is_quantity_unit(unit):
         return result
 
-    for arg in args:
-        if isinstance(arg, _quantity_array.Quantity):
-            return arg._new_like(result, unit)
+    source = _source(args)
 
-    return _quantity_array.Quantity._new(result, unit)
+    if source is None:
+        return _quantity_array.Quantity._new(result, unit)
+
+    return source._new_like(result, unit)
 
 
 def apply_converter(value, conv):

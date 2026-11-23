@@ -620,8 +620,9 @@ class TestMixedLookup:
         a = q(xp, [1.0, 2.0], u.m)
         b = MyQuantity(xp.asarray([100.0, 200.0]), u.cm)
 
+        # As for numpy overrides, a subclass takes precedence.
         assert_quantity(ns.add(a, b), [2.0, 4.0], u.m, xp)
-        assert type(ns.add(a, b)) is Quantity
+        assert type(ns.add(a, b)) is MyQuantity
         assert_quantity(ns.add(b, a), [200.0, 400.0], u.cm, xp)
         assert type(ns.add(b, a)) is MyQuantity
 
@@ -1143,6 +1144,19 @@ class TestSubclasses:
         assert (a * 2).tag == "x"
         assert (a * u.s).tag == "x"
         assert ns.sum(a).tag == "x"
+
+    def test_subclass_takes_precedence(self, xp):
+        # As for numpy overrides, results are created from the first quantity,
+        # unless a later one is an instance of a subclass of its class.
+        a = q(xp, [1.0, 2.0], u.m)
+        b = Tagged(xp.asarray([1.0, 2.0]), u.m, tag="b")
+        c = Length(xp.asarray([1.0, 2.0]), u.m)
+
+        assert type(a + b) is Tagged
+        assert (a + b).tag == "b"
+        assert type(b + a) is Tagged
+        assert type(b + c) is Tagged
+        assert type(c + b) is Length
 
 
 class TestEquivalencies:
