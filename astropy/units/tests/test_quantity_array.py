@@ -52,6 +52,33 @@ class MyQuantity(Quantity):
     __slots__ = ()
 
 
+class Length(Quantity):
+    """A quantity that only holds lengths."""
+
+    def __quantity_subclass__(self, unit):
+        if unit.physical_type == "length":
+            return type(self), True
+
+        return Quantity, False
+
+    def _set_unit(self, unit):
+        if unit.physical_type != "length":
+            raise u.UnitTypeError("Length instances require units of length")
+
+        super()._set_unit(unit)
+
+
+class Tagged(Quantity):
+    """A quantity with an attribute."""
+
+    def __init__(self, value, unit=None, *, tag=None):
+        super().__init__(value, unit)
+        self.tag = tag
+
+    def _copy_metadata(self, source):
+        self.tag = getattr(source, "tag", None)
+
+
 class TestConstruction:
     def test_python_values_are_numpy(self):
         result = Quantity([1, 2], u.m)
@@ -1089,6 +1116,33 @@ class TestGenericCode:
 
         assert not isinstance(result, Quantity)
         assert_allclose(to_numpy(result), [-1.0, 0.0, 1.0])
+
+
+class TestSubclasses:
+    def test_class_of_results(self, xp, ns):
+        a = Length(xp.asarray([1.0, 2.0]), u.m)
+
+        assert type(a * 2) is Length
+        assert type(a[:1]) is Length
+        assert type(a.to(u.cm)) is Length
+        assert type(ns.sum(a)) is Length
+        # Results with other units are plain quantities.
+        assert type(a * a) is Quantity
+        assert type(a / u.s) is Quantity
+        assert type(ns.sqrt(a)) is Quantity
+
+    def test_unit_is_checked(self):
+        with pytest.raises(u.UnitTypeError, match="units of length"):
+            Length(1.0, u.s)
+
+    def test_metadata_is_copied(self, xp, ns):
+        a = Tagged(xp.asarray([1.0, 2.0]), u.m, tag="x")
+
+        assert a[:1].tag == "x"
+        assert a.to(u.cm).tag == "x"
+        assert (a * 2).tag == "x"
+        assert (a * u.s).tag == "x"
+        assert ns.sum(a).tag == "x"
 
 
 class TestEquivalencies:
