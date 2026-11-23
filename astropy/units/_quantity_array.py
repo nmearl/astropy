@@ -154,14 +154,13 @@ class Quantity:
             value = xp.astype(value, default_floating_dtype(xp, device))
 
         self._value = value
-        self._unit = unit
+        self._set_unit(unit)
 
     @classmethod
     def _new(cls, value, unit):
         """Create a quantity from an array and a unit, without any checks.
 
-        All results are created through this method, ensuring subclasses get
-        results of their own type.
+        Results of operations should be created with ``_new_like``.
         """
         if isinstance(value, np.generic):
             # Scalars are 0-d arrays.
@@ -172,6 +171,71 @@ class Quantity:
         self._unit = unit
 
         return self
+
+    def __quantity_subclass__(self, unit):
+        """The class of results with ``unit`` of operations on this quantity.
+
+        Overridden by subclasses that only hold some units (e.g. angles).
+
+        Parameters
+        ----------
+        unit : UnitBase
+            The unit of the result.
+
+        Returns
+        -------
+        tuple :
+            - `~astropy.units.Quantity` subclass
+            - bool: True if subclasses of the given class are ok
+        """
+        return Quantity, True
+
+    def _set_unit(self, unit):
+        """Set the unit.
+
+        Used when a quantity is created and when the unit of an output is set.
+        Subclasses can override it to check the unit (e.g. that it is an angle).
+        """
+        self._unit = unit
+
+    def _copy_metadata(self, source):
+        """Copy attributes other than the unit and info from ``source``.
+
+        Called on every result created from ``source``, after the unit is set.
+        Overridden by subclasses with such attributes (e.g. the wrap angle of
+        a longitude).
+        """
+
+    def _new_like(self, value, unit=None):
+        """A result with ``value`` and ``unit``, created from this quantity.
+
+        The class is that of this quantity if it can hold ``unit``, as given by
+        ``__quantity_subclass__``, and attributes are copied with
+        ``_copy_metadata``.
+
+        Parameters
+        ----------
+        value : array
+            The value of the result.
+        unit : unit, optional
+            The unit of the result. By default, the unit of this quantity, in
+            which case the class is also that of this quantity.
+        """
+        if unit is None:
+            unit = self._unit
+            cls = type(self)
+        elif unit is self._unit and type(self) is Quantity:
+            cls = Quantity
+        else:
+            cls, subok = self.__quantity_subclass__(unit)
+
+            if subok:
+                cls = type(self)
+
+        result = cls._new(value, unit)
+        result._copy_metadata(self)
+
+        return result
 
     @property
     def value(self):
@@ -226,18 +290,18 @@ class Quantity:
             A stream for the transfer, for array libraries that support it.
         """
         value = array_api_compat.to_device(self._value, device, stream=stream)
-        return self._new(value, self._unit)
+        return self._new_like(value)
 
     @property
     def T(self):
-        return self._new(self._value.T, self._unit)
+        return self._new_like(self._value.T)
 
     @property
     def mT(self):
         return self.__array_namespace__().matrix_transpose(self)
 
     def __getitem__(self, key):
-        return self._new(self._value[key], self._unit)
+        return self._new_like(self._value[key])
 
     def __setitem__(self, key, value):
         self._value[key] = self._to_own_unit(value)
@@ -314,7 +378,7 @@ class Quantity:
 
     def __mul__(self, other):
         if isinstance(other, UnitBase):
-            return self._new(self._value, self._unit * other)
+            return self._new_like(self._value, self._unit * other)
 
         if not _is_operand(other):
             return NotImplemented
@@ -323,7 +387,7 @@ class Quantity:
 
     def __rmul__(self, other):
         if isinstance(other, UnitBase):
-            return self._new(self._value, other * self._unit)
+            return self._new_like(self._value, other * self._unit)
 
         if not _is_operand(other):
             return NotImplemented
@@ -332,7 +396,7 @@ class Quantity:
 
     def __truediv__(self, other):
         if isinstance(other, UnitBase):
-            return self._new(self._value, self._unit / other)
+            return self._new_like(self._value, self._unit / other)
 
         if not _is_operand(other):
             return NotImplemented
@@ -343,7 +407,7 @@ class Quantity:
         if isinstance(other, UnitBase):
             result = self.__array_namespace__().divide(1.0, self)
 
-            return result._new(result._value, other * result._unit)
+            return result._new_like(result._value, other * result._unit)
 
         if not _is_operand(other):
             return NotImplemented
@@ -435,7 +499,7 @@ class Quantity:
         if copy and value is self._value:
             value = array_namespace(value).asarray(value, copy=True)
 
-        return self._new(value, unit)
+        return self._new_like(value, unit)
 
     def to_value(self, unit=None, equivalencies=[]):
         """The numerical value, possibly in a different unit.
@@ -506,7 +570,7 @@ class Quantity:
 
         unit = CompositeUnit(1, unit.bases, unit.powers, _error_check=False)
 
-        return self._new(value, unit)
+        return self._new_like(value, unit)
 
     def __str__(self):
         unit = self._unit.to_string()

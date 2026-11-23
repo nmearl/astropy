@@ -59,13 +59,13 @@ def _is_quantity_unit(unit):
 
 
 def _wrap(result, unit, args=()):
-    """Attach ``unit`` to ``result``, as an instance of the first quantity's type."""
+    """Attach ``unit`` to ``result``, as a result created from the first quantity."""
     if not _is_quantity_unit(unit):
         return result
 
     for arg in args:
         if isinstance(arg, _quantity_array.Quantity):
-            return arg._new(result, unit)
+            return arg._new_like(result, unit)
 
     return _quantity_array.Quantity._new(result, unit)
 
