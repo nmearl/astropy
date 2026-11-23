@@ -10,7 +10,6 @@ import contextlib
 import numbers
 import operator
 import re
-import sys
 import warnings
 from collections.abc import Collection
 from fractions import Fraction
@@ -707,13 +706,9 @@ class Quantity(np.ndarray):
         """
         # Defer to quantities of the Array API class, as numpy does for
         # subclasses, so that results of mixed operations have that class.
-        # If its module is not imported, there cannot be any such quantities.
-        array_api_quantity = sys.modules.get("astropy.units._quantity_array")
+        from ._quantity_array import Quantity as ArrayAPIQuantity
 
-        if array_api_quantity is not None and any(
-            isinstance(x, array_api_quantity.Quantity)
-            for x in inputs + kwargs.get("out", ())
-        ):
+        if any(isinstance(x, ArrayAPIQuantity) for x in inputs + kwargs.get("out", ())):
             return NotImplemented
 
         # Determine required conversion functions -- to bring the unit of the
