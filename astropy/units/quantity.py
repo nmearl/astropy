@@ -10,6 +10,7 @@ import contextlib
 import numbers
 import operator
 import re
+import sys
 import warnings
 from collections.abc import Collection
 from fractions import Fraction
@@ -704,6 +705,17 @@ class Quantity(np.ndarray):
         result : `~astropy.units.Quantity` or `NotImplemented`
             Results of the ufunc, with the unit set properly.
         """
+        # Defer to quantities of the Array API class, as numpy does for
+        # subclasses, so that results of mixed operations have that class.
+        # If its module is not imported, there cannot be any such quantities.
+        array_api_quantity = sys.modules.get("astropy.units._quantity_array")
+
+        if array_api_quantity is not None and any(
+            isinstance(x, array_api_quantity.Quantity)
+            for x in inputs + kwargs.get("out", ())
+        ):
+            return NotImplemented
+
         # Determine required conversion functions -- to bring the unit of the
         # input to that expected (e.g., radian for np.sin), or to get
         # consistent units between two inputs (e.g., in np.add) --

@@ -410,10 +410,6 @@ class TestConversion:
             with pytest.raises(TypeError, match="drop the unit"):
                 np.asarray(Quantity(1.0, u.rad))
 
-    def test_numpy_ufuncs_do_not_drop_units(self):
-        with pytest.raises(TypeError):
-            np.add(Quantity(1.0, u.m), 1.0)
-
 
 class TestNamespace:
     def test_namespace(self, xp, ns):
@@ -722,7 +718,7 @@ class TestUnitFromArguments:
         with pytest.raises(u.UnitTypeError, match="Python number"):
             ns.pow(a, xp.asarray([1.0, 2.0]))
 
-        with pytest.raises(u.UnitTypeError, match="exponent of 'pow' must be"):
+        with pytest.raises(u.UnitTypeError, match="raise something to a dimensionless"):
             ns.pow(dimensionless, q(xp, [1.0, 2.0], u.m))
 
     def test_prod(self, xp, ns):

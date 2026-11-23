@@ -18,6 +18,7 @@ from astropy.units.errors import UnitsError
 from astropy.units.quantity import Quantity as _LegacyQuantity
 from astropy.units.quantity import _upcast_int_to_float
 from astropy.units.quantity_helper import namespace as _namespace
+from astropy.units.quantity_helper import numpy_compat as _numpy_compat
 from astropy.units.quantity_helper.rules import converter
 from astropy.utils.compat.array_api import array_namespace, default_floating_dtype
 
@@ -96,9 +97,6 @@ class Quantity:
 
     __slots__ = ("_unit", "_value")
 
-    # numpy functions should not silently drop the unit.
-    __array_ufunc__ = None
-
     # Quantities are mutable, and == gives an array.
     __hash__ = None
 
@@ -160,6 +158,9 @@ class Quantity:
 
     def __array_namespace__(self, *, api_version=None):
         return _namespace.namespace_for(self._value, api_version)
+
+    def __array_ufunc__(self, function, method, *inputs, **kwargs):
+        return _numpy_compat.array_ufunc(function, method, *inputs, **kwargs)
 
     def __jax_array__(self):
         # Quantities cannot be converted to JAX arrays, see open issue.
