@@ -13,7 +13,10 @@ __all__ = [
     "UNSUPPORTED_UFUNCS",
     "can_have_arbitrary_unit",
     "check_output",
+    "check_partial_output",
+    "check_quantity_output",
     "converters_and_unit",
+    "writes_partially",
 ]
 
 
@@ -342,6 +345,32 @@ def check_partial_output(output, unit, function=None):
         )
 
 
+def check_quantity_output(output, unit, function=None):
+    """Check that a result with ``unit`` can be stored in quantity ``output``.
+
+    Raises
+    ------
+    TypeError : If the result is not a quantity (``unit`` is `None`).
+    UnitTypeError : If the class of ``output`` cannot hold ``unit`` (e.g., a
+        unit that is not an angle for `~astropy.coordinates.Angle`).
+    """
+    from_function = f" from {function.__name__} function" if function else ""
+
+    if unit is None:
+        raise TypeError(
+            f"Cannot store non-quantity output{from_function} in "
+            f"{type(output)} instance"
+        )
+
+    q_cls, subok = output.__quantity_subclass__(unit)
+
+    if not (subok or q_cls is type(output)):
+        raise UnitTypeError(
+            f"Cannot store output with unit '{unit}'{from_function} in "
+            f"{type(output)} instance.  Use {q_cls} instance instead."
+        )
+
+
 def check_output(output, unit, inputs, function=None):
     """Check that function output can be stored in the output array given.
 
@@ -381,35 +410,7 @@ def check_output(output, unit, inputs, function=None):
         return None
 
     if hasattr(output, "__quantity_subclass__"):
-        # Check that we're not trying to store a plain Numpy array or a
-        # Quantity with an inconsistent unit (e.g., not angular for Angle).
-        if unit is None:
-            raise TypeError(
-                "Cannot store non-quantity output{} in {} instance".format(
-                    (
-                        f" from {function.__name__} function"
-                        if function is not None
-                        else ""
-                    ),
-                    type(output),
-                )
-            )
-
-        q_cls, subok = output.__quantity_subclass__(unit)
-        if not (subok or q_cls is type(output)):
-            raise UnitTypeError(
-                "Cannot store output with unit '{}'{} "
-                "in {} instance.  Use {} instance instead.".format(
-                    unit,
-                    (
-                        f" from {function.__name__} function"
-                        if function is not None
-                        else ""
-                    ),
-                    type(output),
-                    q_cls,
-                )
-            )
+        check_quantity_output(output, unit, function)
 
         # check we can handle the dtype (e.g., that we are not int
         # when float is required).  Note that we only do this for Quantity

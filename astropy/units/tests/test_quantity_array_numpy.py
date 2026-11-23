@@ -16,6 +16,16 @@ class MyQuantity(Quantity):
     pass
 
 
+class Length(Quantity):
+    """A quantity that only holds lengths."""
+
+    def __quantity_subclass__(self, unit):
+        if unit.physical_type == "length":
+            return type(self), True
+
+        return Quantity, False
+
+
 class TestUfuncsWithRules:
     """Ufuncs with a rule give the same results as the namespace functions."""
 
@@ -239,6 +249,23 @@ class TestOutput:
 
         assert out.unit is u.s
         assert_array_equal(out.value, [3.0, 4.0])
+
+    def test_output_class_can_hold_unit(self):
+        a = Length([1.0, 2.0], u.m)
+        out = Length([3.0, 4.0], u.m)
+
+        with pytest.raises(u.UnitTypeError, match="Cannot store output"):
+            np.multiply(a, a, out=out)
+
+        assert out.unit is u.m
+        assert_array_equal(out.value, [3.0, 4.0])
+
+        out = Quantity([3.0, 4.0], u.m)
+        result = np.multiply(a, a, out=out)
+
+        assert result is out
+        assert type(out) is Quantity
+        assert out.unit == u.m**2
 
     def test_where_cannot_be_quantity(self):
         a = np.ones(2)
